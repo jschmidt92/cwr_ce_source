@@ -81,7 +81,8 @@ dbAsyncJobs
 The async commands copy their arguments immediately, enqueue file work on the
 local DB worker thread, and return a numeric job id. They do not wait for disk
 I/O on the script thread. Invalid arguments or unavailable queued data return
-`-1`.
+`-1`. Completed async job records should be cleared with `dbAsyncClear`; the
+engine prunes old completed jobs when the async job table reaches its safety cap.
 
 `dbAsyncResult` returns an array:
 
@@ -220,8 +221,9 @@ and writes during gameplay.
 - `cacheSet` updates only memory.
 - `cacheFlush` writes one cached record to disk and keeps it in memory.
 - `cacheFlushAll` writes all cached records for the active profile.
-- `cacheAsyncFlush` and `cacheAsyncFlushAll` snapshot cached records and flush
-  them on the local DB worker thread.
+- `cacheAsyncFlush` and `cacheAsyncFlushAll` enqueue flush work on the local DB
+  worker thread. They read the current cache when the worker runs, so later
+  `cacheSet` calls can still affect the async flush before it starts.
 - `cacheRemove` removes one record from memory only.
 - `cacheClear` clears all cached records from memory.
 

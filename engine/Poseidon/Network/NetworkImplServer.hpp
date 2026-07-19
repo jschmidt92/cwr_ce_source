@@ -591,6 +591,9 @@ class NetworkServer : public NetworkComponent
     // Broadcast a global system chat line to every connected player. Works on a
     // dedicated server, where GNetworkManager.Chat() is a no-op (no local client).
     void ChatToAllPlayers(RString message);
+    bool RemoteExec(RString name, const AutoArray<char>& params, int target, const AutoArray<char>& targetSpec,
+                    bool jip, RString jipKey, bool callMode);
+    bool RemoteExecRemove(RString jipKey);
     // Number of dynamic (runtime) ban entries — id + IP. Used by tests.
     int GetBanCount() const { return _banListLocal.Size() + _banListIPLocal.Size(); }
 

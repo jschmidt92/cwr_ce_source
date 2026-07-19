@@ -2,13 +2,12 @@
 #include <Poseidon/AI/AI.hpp>
 #include <Poseidon/Game/Scripting/Scripts.hpp>
 #include <Poseidon/Network/Network.hpp>
+#include <Poseidon/Network/NetworkScriptValueCodec.hpp>
 #include <Poseidon/World/World.hpp>
 
 #include <map>
 #include <string>
 #include <vector>
-
-GameValue RemoteExec(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 
 namespace
 {
@@ -145,7 +144,7 @@ bool CheckEventReceiveArg(const GameState* state, GameValuePar arg)
     const GameArrayType& array = arg;
     if (array.Size() != 3 && array.Size() != 4)
     {
-        state->SetError(EvalDim, array.Size(), 3);
+        state->SetError(EvalDim, array.Size(), array.Size() < 3 ? 3 : 4);
         return false;
     }
     if (array[0].GetType() != GameString)
@@ -285,15 +284,19 @@ GameValue ExpandEventTargetGroups(const GameState* state, GameValuePar target)
 int DispatchEvent(const GameState* state, const std::string& scope, const std::string& name, GameValuePar payload,
                   int sender)
 {
-    if (!Poseidon::GWorld)
+    if (!state)
         return 0;
 
-    int dispatched = 0;
+    std::vector<EventHandler> matchingHandlers;
     for (const EventHandler& handler : EventHandlers())
     {
-        if (handler.scope != scope || handler.name != name)
-            continue;
+        if (handler.scope == scope && handler.name == name)
+            matchingHandlers.push_back(handler);
+    }
 
+    int dispatched = 0;
+    for (const EventHandler& handler : matchingHandlers)
+    {
         GameValue args = MakeEventArgs(state, handler.scope.c_str(), handler.name.c_str(), payload, sender);
         if (handler.inlineCode)
         {
@@ -305,12 +308,33 @@ int DispatchEvent(const GameState* state, const std::string& scope, const std::s
         }
         else
         {
+            if (!Poseidon::GWorld)
+                continue;
+
             Poseidon::Script* script = new Poseidon::Script(handler.body, args);
             Poseidon::GWorld->AddScript(script);
         }
         ++dispatched;
     }
     return dispatched;
+}
+
+bool EncodeRemoteEvent(const GameState* state, GameValuePar params, GameValuePar target, AutoArray<char>& encodedParams,
+                       int& scalarTarget, AutoArray<char>& encodedTarget)
+{
+    if (!Poseidon::EncodeScriptValue(encodedParams, params))
+        return false;
+
+    GameValue expandedTarget = ExpandEventTargetGroups(state, target);
+    Poseidon::RemoteExecTargetSelector selector;
+    if (!Poseidon::BuildRemoteExecTargetSelector(selector, expandedTarget) ||
+        !Poseidon::EncodeRemoteExecTargetSelector(encodedTarget, selector))
+    {
+        return false;
+    }
+
+    scalarTarget = selector.kind == Poseidon::RemoteExecTargetKind::Scalar ? selector.scalar : 0;
+    return true;
 }
 
 GameValue EmitRemoteEventToTarget(const GameState* state, const char* scope, const std::string& name,
@@ -324,14 +348,14 @@ GameValue EmitRemoteEventToTarget(const GameState* state, const char* scope, con
         return GameValue(true);
     }
 
-    GameValue descriptor = state->CreateGameValue(GameArray);
-    GameArrayType& desc = descriptor;
-    desc.Resize(2);
-    desc[0] = GameValue("eventReceive");
-    desc[1] = ExpandEventTargetGroups(state, target);
+    AutoArray<char> encodedParams;
+    AutoArray<char> encodedTarget;
+    int scalarTarget = 0;
+    if (!EncodeRemoteEvent(state, params, target, encodedParams, scalarTarget, encodedTarget))
+        return GameValue(false);
 
-    RemoteExec(state, params, descriptor);
-    return GameValue(true);
+    return GameValue(GetNetworkManager().RemoteExec(RString("eventReceive"), encodedParams, scalarTarget, encodedTarget,
+                                                    false, RString(), false));
 }
 
 GameValue EmitRemoteEvent(const GameState* state, const char* scope, GameValuePar arg, int target)
@@ -378,12 +402,12 @@ GameValue EventOn(const GameState* state, GameValuePar arg)
 
     const GameArrayType& array = arg;
     EventHandler handler;
-    handler.id = NextEventHandlerId()++;
     handler.scope = GameStringToStdString(array[0]);
     handler.name = GameStringToStdString(array[1]);
     if (!ParseEventHandlerTarget(array[2], handler))
         return GameValue(-1.0f);
 
+    handler.id = NextEventHandlerId()++;
     EventHandlers().push_back(handler);
     return GameValue(static_cast<float>(handler.id));
 }

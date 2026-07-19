@@ -1805,6 +1805,10 @@ bool NetworkManager::RemoteExec(RString name, const AutoArray<char>& params, int
     {
         return _client->RemoteExec(name, params, target, targetSpec, jip, jipKey, callMode);
     }
+    if (_server)
+    {
+        return _server->RemoteExec(name, params, target, targetSpec, jip, jipKey, callMode);
+    }
     return false;
 }
 
@@ -1813,6 +1817,10 @@ bool NetworkManager::RemoteExecRemove(RString jipKey)
     if (_client)
     {
         return _client->RemoteExecRemove(jipKey);
+    }
+    if (_server)
+    {
+        return _server->RemoteExecRemove(jipKey);
     }
     return false;
 }

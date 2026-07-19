@@ -95,27 +95,26 @@ GameValue MakeMissionPhaseHandlerInfo(const GameState* state, const MissionPhase
 
 namespace Poseidon
 {
-int RunMissionPhase(const char* phase, GameValuePar argument)
+int RunMissionPhaseForState(GameState* state, const char* phase, GameValuePar argument)
 {
-    if (!GWorld || !phase || *phase == 0)
+    if (!state || !phase || *phase == 0)
     {
         return 0;
     }
 
-    GameState* state = GWorld->GetGameState();
-    if (!state)
-    {
-        return 0;
-    }
-
-    int dispatched = 0;
+    std::vector<MissionPhaseHandler> matchingHandlers;
     for (const MissionPhaseHandler& handler : MissionPhaseHandlers())
     {
         if (handler.phase != phase)
         {
             continue;
         }
+        matchingHandlers.push_back(handler);
+    }
 
+    int dispatched = 0;
+    for (const MissionPhaseHandler& handler : matchingHandlers)
+    {
         GameValue args = MakeMissionPhaseArgs(state, handler.phase.c_str(), argument);
         if (handler.inlineCode)
         {
@@ -127,12 +126,20 @@ int RunMissionPhase(const char* phase, GameValuePar argument)
         }
         else
         {
+            if (!GWorld)
+                continue;
+
             Script* script = new Script(handler.body, args);
             GWorld->AddScript(script);
         }
         ++dispatched;
     }
     return dispatched;
+}
+
+int RunMissionPhase(const char* phase, GameValuePar argument)
+{
+    return RunMissionPhaseForState(GWorld ? GWorld->GetGameState() : nullptr, phase, argument);
 }
 
 void ClearMissionPhaseHandlers()
@@ -149,11 +156,11 @@ GameValue MissionPhaseOn(const GameState* state, GameValuePar arg)
 
     const GameArrayType& array = arg;
     MissionPhaseHandler handler;
-    handler.id = NextMissionPhaseHandlerId()++;
     handler.phase = GameStringToStdString(array[0]);
     if (!ParseMissionPhaseHandlerTarget(array[1], handler))
         return GameValue(-1.0f);
 
+    handler.id = NextMissionPhaseHandlerId()++;
     MissionPhaseHandlers().push_back(handler);
     return GameValue(static_cast<float>(handler.id));
 }

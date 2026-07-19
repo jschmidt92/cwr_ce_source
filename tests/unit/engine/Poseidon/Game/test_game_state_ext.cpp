@@ -15,10 +15,13 @@
 #include <fstream>
 #include <ctime>
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <initializer_list>
 #include <map>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "../test_fixtures.hpp"
@@ -40,6 +43,7 @@ bool DefaultAdvancedEditorMode();
 bool LoadAdvancedEditorModeFromUserParams(const char* userParamsPath);
 void ClearScriptEventHandlers();
 void ClearMissionPhaseHandlers();
+int RunMissionPhaseForState(GameState* state, const char* phase, GameValuePar argument);
 } // namespace Poseidon
 
 namespace Poseidon
@@ -62,6 +66,7 @@ GameValue EventOn(const GameState* state, GameValuePar oper1);
 GameValue EventGet(const GameState* state, GameValuePar oper1);
 GameValue EventList(const GameState* state);
 GameValue EventOff(const GameState* state, GameValuePar oper1);
+GameValue EventEmitLocal(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseOn(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseOff(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseClear(const GameState* state, GameValuePar oper1);
@@ -76,9 +81,12 @@ GameValue FunctionUnregisterAddon(const GameState* state, GameValuePar oper1);
 GameValue FunctionClear(const GameState* state);
 GameValue FunctionClearAddon(const GameState* state);
 GameValue LocalDbAsyncSave(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncLoad(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncRemove(const GameState* state, GameValuePar oper1);
 GameValue LocalDbAsyncDone(const GameState* state, GameValuePar oper1);
 GameValue LocalDbAsyncResult(const GameState* state, GameValuePar oper1);
 GameValue LocalDbAsyncClear(const GameState* state, GameValuePar oper1);
+GameValue LocalDbLoad(const GameState* state, GameValuePar oper1);
 extern bool GUseFileBanks;
 
 namespace
@@ -264,6 +272,50 @@ GameValue MakeConfigAssignment(const GameState& state, const char* name, GameVal
     return pair;
 }
 
+GameValue MakeStringArray(const GameState& state, std::initializer_list<const char*> values)
+{
+    GameValue value = state.CreateGameValue(GameArray);
+    GameArrayType& array = value;
+    array.Resize(static_cast<int>(values.size()));
+
+    int index = 0;
+    for (const char* item : values)
+        array[index++] = GameValue(item);
+    return value;
+}
+
+GameValue MakeEventRegistration(const GameState& state, const char* scope, const char* name, const char* code)
+{
+    GameValue value = state.CreateGameValue(GameArray);
+    GameArrayType& array = value;
+    array.Resize(3);
+    array[0] = GameValue(scope);
+    array[1] = GameValue(name);
+    array[2] = GameValue(new GameDataCode(code));
+    return value;
+}
+
+GameValue MakeMissionPhaseRegistration(const GameState& state, const char* phase, const char* code)
+{
+    GameValue value = state.CreateGameValue(GameArray);
+    GameArrayType& array = value;
+    array.Resize(2);
+    array[0] = GameValue(phase);
+    array[1] = GameValue(new GameDataCode(code));
+    return value;
+}
+
+GameValue WaitForAsyncLocalDbResult(const GameState& state, GameValue job)
+{
+    for (int attempt = 0; attempt < 200; ++attempt)
+    {
+        if ((bool)LocalDbAsyncDone(&state, job))
+            return LocalDbAsyncResult(&state, job);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return LocalDbAsyncResult(&state, job);
+}
+
 std::string BankConfigQuery(const std::string& stem)
 {
 #ifdef _WIN32
@@ -292,6 +344,14 @@ struct ScopedMissionHeader
         std::snprintf(Glob.header.worldname, sizeof(Glob.header.worldname), "%s", world.c_str());
         Glob.header.filenameReal = filenameReal;
     }
+};
+
+struct ScopedPlayerName
+{
+    explicit ScopedPlayerName(const char* name) : previous(Glob.header.playerName) { Glob.header.playerName = name; }
+    ~ScopedPlayerName() { Glob.header.playerName = previous; }
+
+    RString previous;
 };
 
 } // namespace
@@ -449,6 +509,42 @@ TEST_CASE("script event handlers can be inspected by id and listed", "[game][gam
     Poseidon::ClearScriptEventHandlers();
 }
 
+TEST_CASE("script event failed registration does not consume handler ids", "[game][gameStateExt][events]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+    Poseidon::ClearScriptEventHandlers();
+
+    GameValue invalid = MakeEventRegistration(GGameState, "local", "empty", "");
+    REQUIRE(static_cast<GameScalarType>(EventOn(&GGameState, invalid)) == -1.0f);
+
+    GameValue valid = MakeEventRegistration(GGameState, "local", "valid", "true");
+    REQUIRE(static_cast<GameScalarType>(EventOn(&GGameState, valid)) == 1.0f);
+
+    Poseidon::ClearScriptEventHandlers();
+}
+
+TEST_CASE("script event dispatch tolerates handler mutation", "[game][gameStateExt][events]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+    Poseidon::ClearScriptEventHandlers();
+    GGameState.EvaluateMultiple("triClearRemoteExecLog");
+
+    GameValue first =
+        MakeEventRegistration(GGameState, "local", "mutating", "eventOff 2; triRecordRemoteExec [\"first\"]");
+    GameValue second = MakeEventRegistration(GGameState, "local", "mutating", "triRecordRemoteExec [\"second\"]");
+    REQUIRE(static_cast<GameScalarType>(EventOn(&GGameState, first)) == 1.0f);
+    REQUIRE(static_cast<GameScalarType>(EventOn(&GGameState, second)) == 2.0f);
+
+    GameValue emit = MakeStringArray(GGameState, {"mutating", "payload"});
+    REQUIRE(static_cast<GameScalarType>(EventEmitLocal(&GGameState, emit)) == 2.0f);
+    REQUIRE(strcmp(((GameStringType)GGameState.EvaluateMultiple("triRemoteExecLog")).Data(), "first|second") == 0);
+    REQUIRE(((const GameArrayType&)EventList(&GGameState)).Size() == 1);
+
+    Poseidon::ClearScriptEventHandlers();
+}
+
 TEST_CASE("mission phase handlers can be listed, removed, and cleared", "[game][gameStateExt][missionPhase]")
 {
     GGameState.Reset();
@@ -482,6 +578,41 @@ TEST_CASE("mission phase handlers can be listed, removed, and cleared", "[game][
     args[1] = GameValue("scripts\\server_init.sqf");
     REQUIRE(static_cast<GameScalarType>(MissionPhaseOn(&GGameState, registration)) == 2.0f);
     REQUIRE(static_cast<GameScalarType>(MissionPhaseClear(&GGameState, GameValue("serverInit"))) == 1.0f);
+
+    Poseidon::ClearMissionPhaseHandlers();
+}
+
+TEST_CASE("mission phase failed registration does not consume handler ids", "[game][gameStateExt][missionPhase]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+    Poseidon::ClearMissionPhaseHandlers();
+
+    GameValue invalid = MakeMissionPhaseRegistration(GGameState, "postInit", "");
+    REQUIRE(static_cast<GameScalarType>(MissionPhaseOn(&GGameState, invalid)) == -1.0f);
+
+    GameValue valid = MakeMissionPhaseRegistration(GGameState, "postInit", "true");
+    REQUIRE(static_cast<GameScalarType>(MissionPhaseOn(&GGameState, valid)) == 1.0f);
+
+    Poseidon::ClearMissionPhaseHandlers();
+}
+
+TEST_CASE("mission phase dispatch tolerates handler mutation", "[game][gameStateExt][missionPhase]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+    Poseidon::ClearMissionPhaseHandlers();
+    GGameState.EvaluateMultiple("triClearRemoteExecLog");
+
+    GameValue first =
+        MakeMissionPhaseRegistration(GGameState, "postInit", "missionPhaseOff 2; triRecordRemoteExec [\"first\"]");
+    GameValue second = MakeMissionPhaseRegistration(GGameState, "postInit", "triRecordRemoteExec [\"second\"]");
+    REQUIRE(static_cast<GameScalarType>(MissionPhaseOn(&GGameState, first)) == 1.0f);
+    REQUIRE(static_cast<GameScalarType>(MissionPhaseOn(&GGameState, second)) == 2.0f);
+
+    REQUIRE(Poseidon::RunMissionPhaseForState(&GGameState, "postInit", GameValue()) == 2);
+    REQUIRE(strcmp(((GameStringType)GGameState.EvaluateMultiple("triRemoteExecLog")).Data(), "first|second") == 0);
+    REQUIRE(((const GameArrayType&)MissionPhaseList(&GGameState)).Size() == 1);
 
     Poseidon::ClearMissionPhaseHandlers();
 }
@@ -556,6 +687,44 @@ TEST_CASE("addon functions survive mission clears and restore after mission over
 
     REQUIRE((bool)FunctionUnregisterAddon(&GGameState, GameValue("TST_fnc_shared")));
     REQUIRE_FALSE((bool)FunctionExists(&GGameState, GameValue("TST_fnc_shared")));
+}
+
+TEST_CASE("async local DB save load and remove complete end to end", "[game][gameStateExt][local_db]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+    ScopedPlayerName player("AsyncLocalDbTestPlayer");
+
+    GameValue saveArgs = MakeStringArray(GGameState, {"unit_async", "record", "{\"value\":42}"});
+    GameValue saveJob = LocalDbAsyncSave(&GGameState, saveArgs);
+    REQUIRE(static_cast<GameScalarType>(saveJob) > 0.0f);
+    GameValue saveResultValue = WaitForAsyncLocalDbResult(GGameState, saveJob);
+    const GameArrayType& saveResult = saveResultValue;
+    REQUIRE(saveResult.Size() == 4);
+    REQUIRE(strcmp(((GameStringType)saveResult[1]).Data(), "done") == 0);
+    REQUIRE((bool)saveResult[2]);
+    REQUIRE((bool)LocalDbAsyncClear(&GGameState, saveJob));
+
+    GameValue loadArgs = MakeStringArray(GGameState, {"unit_async", "record"});
+    GameValue loadJob = LocalDbAsyncLoad(&GGameState, loadArgs);
+    REQUIRE(static_cast<GameScalarType>(loadJob) > 0.0f);
+    GameValue loadResultValue = WaitForAsyncLocalDbResult(GGameState, loadJob);
+    const GameArrayType& loadResult = loadResultValue;
+    REQUIRE(loadResult.Size() == 4);
+    REQUIRE(strcmp(((GameStringType)loadResult[1]).Data(), "done") == 0);
+    REQUIRE((bool)loadResult[2]);
+    REQUIRE(strcmp(((GameStringType)loadResult[3]).Data(), "{\"value\":42}") == 0);
+    REQUIRE((bool)LocalDbAsyncClear(&GGameState, loadJob));
+
+    GameValue removeJob = LocalDbAsyncRemove(&GGameState, loadArgs);
+    REQUIRE(static_cast<GameScalarType>(removeJob) > 0.0f);
+    GameValue removeResultValue = WaitForAsyncLocalDbResult(GGameState, removeJob);
+    const GameArrayType& removeResult = removeResultValue;
+    REQUIRE(removeResult.Size() == 4);
+    REQUIRE(strcmp(((GameStringType)removeResult[1]).Data(), "done") == 0);
+    REQUIRE((bool)removeResult[2]);
+    REQUIRE((bool)LocalDbAsyncClear(&GGameState, removeJob));
+    REQUIRE(strcmp(((GameStringType)LocalDbLoad(&GGameState, loadArgs)).Data(), "") == 0);
 }
 
 TEST_CASE("XOR1024 encryption registers and round-trips data", "[game][gameStateExt][encryption]")

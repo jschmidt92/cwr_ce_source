@@ -5,9 +5,10 @@ mission load phases. This is separate from the runtime event system: lifecycle
 phases are engine-owned and fire in a fixed order during mission startup.
 
 The lifecycle registry is mission-scoped and is cleared at the beginning of
-mission init, before `preInit` fires. Handlers registered from `init.sqs` or
-`init.sqf` can catch later phases such as `init`, `postInit`, `serverInit`, and
-`playerLocalInit`.
+mission init. `preInit` fires immediately after that clear, before mission
+scripts run, so handlers registered from `init.sqs` or `init.sqf` can catch
+later phases such as `init`, `postInit`, `serverInit`, and `playerLocalInit`,
+but not `preInit`.
 
 ## Commands
 
@@ -55,7 +56,9 @@ future phase-specific context.
 
 Common mission phases:
 
-- `preInit`: before mission `init.sqs` and `init.sqf`.
+- `preInit`: before mission `init.sqs` and `init.sqf`; this is currently an
+  engine-owned phase and is not observable by handlers registered from mission
+  scripts.
 - `init`: after mission `init.sqs` and `init.sqf`.
 - `postInit`: immediately after `init`.
 
