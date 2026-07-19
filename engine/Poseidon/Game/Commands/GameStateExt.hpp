@@ -6,6 +6,17 @@
 
 namespace Poseidon
 {
+int CurrentScriptEventSender();
+
+class ScriptEventSenderScope
+{
+public:
+	explicit ScriptEventSenderScope(int sender);
+	~ScriptEventSenderScope();
+
+private:
+	int _previous;
+};
 } // namespace Poseidon
 
 

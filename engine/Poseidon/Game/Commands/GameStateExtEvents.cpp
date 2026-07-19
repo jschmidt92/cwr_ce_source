@@ -133,6 +133,33 @@ bool CheckEventEmitArg(const GameState* state, GameValuePar arg)
     return true;
 }
 
+bool CheckEventReceiveArg(const GameState* state, GameValuePar arg)
+{
+    if (arg.GetType() != GameArray)
+    {
+        state->TypeError(GameArray, arg.GetType());
+        return false;
+    }
+
+    const GameArrayType& array = arg;
+    if (array.Size() != 3 && array.Size() != 4)
+    {
+        state->SetError(EvalDim, array.Size(), 3);
+        return false;
+    }
+    if (array[0].GetType() != GameString)
+    {
+        state->TypeError(GameString, array[0].GetType());
+        return false;
+    }
+    if (array[1].GetType() != GameString)
+    {
+        state->TypeError(GameString, array[1].GetType());
+        return false;
+    }
+    return true;
+}
+
 bool CheckEventNetworkEmitArg(const GameState* state, GameValuePar arg)
 {
     if (arg.GetType() != GameArray)
@@ -155,18 +182,42 @@ bool CheckEventNetworkEmitArg(const GameState* state, GameValuePar arg)
     return true;
 }
 
-GameValue MakeEventArgs(const GameState* state, const char* scope, const char* name, GameValuePar payload)
+bool CheckEventClientEmitArg(const GameState* state, GameValuePar arg)
+{
+    if (arg.GetType() != GameArray)
+    {
+        state->TypeError(GameArray, arg.GetType());
+        return false;
+    }
+
+    const GameArrayType& array = arg;
+    if (array.Size() != 3)
+    {
+        state->SetError(EvalDim, array.Size(), 3);
+        return false;
+    }
+    if (array[1].GetType() != GameString)
+    {
+        state->TypeError(GameString, array[1].GetType());
+        return false;
+    }
+    return true;
+}
+
+GameValue MakeEventArgs(const GameState* state, const char* scope, const char* name, GameValuePar payload, int sender)
 {
     GameValue value = state->CreateGameValue(GameArray);
     GameArrayType& array = value;
-    array.Resize(3);
+    array.Resize(4);
     array[0] = GameValue(scope);
     array[1] = GameValue(name);
     array[2] = payload;
+    array[3] = GameValue(static_cast<float>(sender));
     return value;
 }
 
-int DispatchEvent(const GameState* state, const std::string& scope, const std::string& name, GameValuePar payload)
+int DispatchEvent(const GameState* state, const std::string& scope, const std::string& name, GameValuePar payload,
+                  int sender)
 {
     if (!Poseidon::GWorld)
         return 0;
@@ -177,7 +228,7 @@ int DispatchEvent(const GameState* state, const std::string& scope, const std::s
         if (handler.scope != scope || handler.name != name)
             continue;
 
-        GameValue args = MakeEventArgs(state, handler.scope.c_str(), handler.name.c_str(), payload);
+        GameValue args = MakeEventArgs(state, handler.scope.c_str(), handler.name.c_str(), payload, sender);
         if (handler.inlineCode)
         {
             GameVarSpace local(state->GetContext());
@@ -196,17 +247,14 @@ int DispatchEvent(const GameState* state, const std::string& scope, const std::s
     return dispatched;
 }
 
-GameValue EmitRemoteEvent(const GameState* state, const char* scope, GameValuePar arg, int target)
+GameValue EmitRemoteEventToTarget(const GameState* state, const char* scope, const std::string& name,
+                                  GameValuePar payload, GameValuePar target)
 {
-    if (!CheckEventNetworkEmitArg(state, arg))
-        return GameValue(false);
-
-    const GameArrayType& array = arg;
-    GameValue params = MakeEventArgs(state, scope, GameStringToStdString(array[0]).c_str(), array[1]);
+    GameValue params = MakeEventArgs(state, scope, name.c_str(), payload, -1);
 
     if (!Poseidon::GWorld || Poseidon::GWorld->GetMode() != Poseidon::GModeNetware)
     {
-        DispatchEvent(state, scope, GameStringToStdString(array[0]), array[1]);
+        DispatchEvent(state, scope, name, payload, -1);
         return GameValue(true);
     }
 
@@ -214,15 +262,42 @@ GameValue EmitRemoteEvent(const GameState* state, const char* scope, GameValuePa
     GameArrayType& desc = descriptor;
     desc.Resize(2);
     desc[0] = GameValue("eventReceive");
-    desc[1] = GameValue(static_cast<float>(target));
+    desc[1] = target;
 
     RemoteExec(state, params, descriptor);
     return GameValue(true);
 }
+
+GameValue EmitRemoteEvent(const GameState* state, const char* scope, GameValuePar arg, int target)
+{
+    if (!CheckEventNetworkEmitArg(state, arg))
+        return GameValue(false);
+
+    const GameArrayType& array = arg;
+    return EmitRemoteEventToTarget(state, scope, GameStringToStdString(array[0]), array[1],
+                                   GameValue(static_cast<float>(target)));
+}
+
+thread_local int GScriptEventSender = -1;
 } // namespace
 
 namespace Poseidon
 {
+int CurrentScriptEventSender()
+{
+    return GScriptEventSender;
+}
+
+ScriptEventSenderScope::ScriptEventSenderScope(int sender) : _previous(GScriptEventSender)
+{
+    GScriptEventSender = sender;
+}
+
+ScriptEventSenderScope::~ScriptEventSenderScope()
+{
+    GScriptEventSender = _previous;
+}
+
 void ClearScriptEventHandlers()
 {
     EventHandlers().clear();
@@ -302,7 +377,7 @@ GameValue EventEmit(const GameState* state, GameValuePar arg)
     const GameArrayType& array = arg;
     const std::string scope = GameStringToStdString(array[0]);
     const std::string name = GameStringToStdString(array[1]);
-    return GameValue(static_cast<float>(DispatchEvent(state, scope, name, array[2])));
+    return GameValue(static_cast<float>(DispatchEvent(state, scope, name, array[2], -1)));
 }
 
 GameValue EventEmitGlobal(const GameState* state, GameValuePar arg)
@@ -315,13 +390,25 @@ GameValue EventEmitServer(const GameState* state, GameValuePar arg)
     return EmitRemoteEvent(state, "server", arg, 2);
 }
 
+GameValue EventEmitClient(const GameState* state, GameValuePar arg)
+{
+    if (!CheckEventClientEmitArg(state, arg))
+        return GameValue(false);
+
+    const GameArrayType& array = arg;
+    return EmitRemoteEventToTarget(state, "client", GameStringToStdString(array[1]), array[2], array[0]);
+}
+
 GameValue EventReceive(const GameState* state, GameValuePar arg)
 {
-    if (!CheckEventEmitArg(state, arg))
+    if (!CheckEventReceiveArg(state, arg))
         return GameValue(0.0f);
 
     const GameArrayType& array = arg;
     const std::string scope = GameStringToStdString(array[0]);
     const std::string name = GameStringToStdString(array[1]);
-    return GameValue(static_cast<float>(DispatchEvent(state, scope, name, array[2])));
+    int sender = Poseidon::CurrentScriptEventSender();
+    if (sender < 0 && array.Size() > 3 && array[3].GetType() == GameScalar)
+        sender = toInt(static_cast<float>(array[3]));
+    return GameValue(static_cast<float>(DispatchEvent(state, scope, name, array[2], sender)));
 }

@@ -110,13 +110,14 @@ static NetworkObject* ResolveServerNetworkObject(void* context, const NetworkId&
     return server ? server->GetObject(mutableId) : nullptr;
 }
 
-static void ExecuteNamedRemoteExec(GameState* gstate, RString name, GameValuePar params)
+static void ExecuteNamedRemoteExec(GameState* gstate, RString name, GameValuePar params, int sender)
 {
     if (!gstate || !WireBounds::ValidIdentifier(name, 256))
     {
         return;
     }
 
+    Poseidon::ScriptEventSenderScope senderScope(sender);
     GameVarSpace local(gstate->GetContext());
     gstate->BeginContext(&local);
     gstate->VarSetLocal("_this", params, true);
@@ -699,7 +700,7 @@ void NetworkServer::OnMessage(int from, NetworkMessage* msg, NetworkMessageType 
                     GameValue payload = Poseidon::DecodeScriptValue(params._params, ResolveServerNetworkObject, this);
                     if (!payload.GetNil() && GWorld && GWorld->GetGameState())
                     {
-                        ExecuteNamedRemoteExec(GWorld->GetGameState(), params._name, payload);
+                        ExecuteNamedRemoteExec(GWorld->GetGameState(), params._name, payload, from);
                     }
                     acceptedForJip = true;
                 }
@@ -753,7 +754,7 @@ void NetworkServer::OnMessage(int from, NetworkMessage* msg, NetworkMessageType 
                                     Poseidon::DecodeScriptValue(params._params, ResolveServerNetworkObject, this);
                                 if (!payload.GetNil() && GWorld && GWorld->GetGameState())
                                 {
-                                    ExecuteNamedRemoteExec(GWorld->GetGameState(), params._name, payload);
+                                    ExecuteNamedRemoteExec(GWorld->GetGameState(), params._name, payload, from);
                                 }
                             },
                             [this](const NetworkId& id)

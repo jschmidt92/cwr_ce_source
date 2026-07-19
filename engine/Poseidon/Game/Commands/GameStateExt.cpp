@@ -588,6 +588,11 @@ GameValue LocalDbLoad(const GameState* state, GameValuePar oper1);
 GameValue LocalDbRemove(const GameState* state, GameValuePar oper1);
 GameValue LocalDbExists(const GameState* state, GameValuePar oper1);
 GameValue LocalDbList(const GameState* state, GameValuePar oper1);
+GameValue LocalDbFind(const GameState* state, GameValuePar oper1);
+GameValue LocalDbFindPath(const GameState* state, GameValuePar oper1);
+GameValue LocalDbIndex(const GameState* state, GameValuePar oper1);
+GameValue LocalDbIndexPath(const GameState* state, GameValuePar oper1);
+GameValue LocalDbUpdate(const GameState* state, GameValuePar oper1);
 GameValue LocalDbCacheLoad(const GameState* state, GameValuePar oper1);
 GameValue LocalDbCacheGet(const GameState* state, GameValuePar oper1);
 GameValue LocalDbCacheSet(const GameState* state, GameValuePar oper1);
@@ -632,6 +637,7 @@ GameValue EventClear(const GameState* state, GameValuePar oper1);
 GameValue EventEmit(const GameState* state, GameValuePar oper1);
 GameValue EventEmitGlobal(const GameState* state, GameValuePar oper1);
 GameValue EventEmitServer(const GameState* state, GameValuePar oper1);
+GameValue EventEmitClient(const GameState* state, GameValuePar oper1);
 GameValue EventReceive(const GameState* state, GameValuePar oper1);
 GameValue PublicExec(const GameState* state, GameValuePar oper1);
 GameValue RemoteExec(const GameState* state, GameValuePar oper1, GameValuePar oper2);
@@ -1093,6 +1099,7 @@ static const GameFunction* GetExtUnary(int& count)
         GameFunction(GameScalar, "eventEmit", EventEmit, GameArray),
         GameFunction(GameBool, "eventEmitGlobal", EventEmitGlobal, GameArray),
         GameFunction(GameBool, "eventEmitServer", EventEmitServer, GameArray),
+        GameFunction(GameBool, "eventEmitClient", EventEmitClient, GameArray),
         GameFunction(GameScalar, "eventReceive", EventReceive, GameArray),
         GameFunction(GameNothing, "publicVariable", PublicVariable, GameString),
         GameFunction(GameNothing, "saveMission", SaveMission, GameString),
@@ -1110,6 +1117,11 @@ static const GameFunction* GetExtUnary(int& count)
         GameFunction(GameBool, "dbRemove", LocalDbRemove, GameArray),
         GameFunction(GameBool, "dbExists", LocalDbExists, GameArray),
         GameFunction(GameArray, "dbList", LocalDbList, GameString),
+        GameFunction(GameArray, "dbFind", LocalDbFind, GameArray),
+        GameFunction(GameArray, "dbFindPath", LocalDbFindPath, GameArray),
+        GameFunction(GameArray, "dbIndex", LocalDbIndex, GameArray),
+        GameFunction(GameArray, "dbIndexPath", LocalDbIndexPath, GameArray),
+        GameFunction(GameBool, "dbUpdate", LocalDbUpdate, GameArray),
         GameFunction(GameBool, "cacheLoad", LocalDbCacheLoad, GameArray),
         GameFunction(GameString, "cacheGet", LocalDbCacheGet, GameArray),
         GameFunction(GameBool, "cacheSet", LocalDbCacheSet, GameArray),

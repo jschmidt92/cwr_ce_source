@@ -49,6 +49,11 @@ dbLoad ["database", "key"]
 dbRemove ["database", "key"]
 dbExists ["database", "key"]
 dbList "database"
+dbFind ["database", "field", value]
+dbFindPath ["database", ["nested", "field"], value]
+dbIndex ["database", "field"]
+dbIndexPath ["database", ["nested", "field"]]
+dbUpdate ["database", "key", { jsonSet [_this, "cash", (jsonGet [_this, "cash"]) + 100] }]
 ```
 
 `dbSave` writes immediately to disk. `dbLoad` reads the record from disk and
@@ -75,6 +80,63 @@ In SQS-style scripts, keep the full `jsonObject` expression on one line:
 state = jsonObject [["uid", "76561198027566824"], ["cash", 0], ["bank", 2000], ["position", getPosASL player], ["direction", getDir player], ["loadout", getUnitLoadout player]]
 dbSave ["actor", "76561198027566824", state]
 ```
+
+## Query And Index Helpers
+
+`dbFind` scans the keys from `dbList`, loads each JSON record, and returns the
+keys whose top-level field matches the requested value.
+
+```sqf
+westActors = dbFind ["actor", "side", "WEST"]
+richActors = dbFind ["actor", "cash", 1000]
+```
+
+`dbFindPath` does the same check against a nested object path:
+
+```sqf
+medics = dbFindPath ["actor", ["role", "class"], "medic"]
+```
+
+`dbIndex` groups records by a top-level JSON field and returns pairs of
+`[fieldValue, [matchingKey, ...]]`.
+
+```sqf
+bySide = dbIndex ["actor", "side"]
+```
+
+`dbIndexPath` groups by a nested path:
+
+```sqf
+byTown = dbIndexPath ["container", ["location", "town"]]
+```
+
+These helpers are scan-based indexes. They are intended for moderate profile
+databases and mission startup/catalog use. For hot gameplay paths, cache the
+result in script memory or maintain a dedicated index record with `dbUpdate`.
+
+## Atomic Updates
+
+`dbUpdate` loads one record, runs a code block with `_this` set to the current
+JSON string, and saves the string returned by the code block. The load, script
+transform, save, and cache refresh run under the local DB command lock, so two
+script commands in the same process cannot interleave a read-modify-write cycle.
+
+```sqf
+dbUpdate ["actor", uid, {
+  state = _this
+  cash = jsonGet [state, "cash"]
+  jsonSet [state, "cash", cash + 100]
+}]
+```
+
+SQS-safe inline form:
+
+```sqf
+dbUpdate ["actor", uid, { state = _this; cash = jsonGet [state, "cash"]; jsonSet [state, "cash", cash + 100] }]
+```
+
+If the record does not exist, `_this` is an empty string. The block should return
+a complete JSON document.
 
 ## Cache Commands
 
