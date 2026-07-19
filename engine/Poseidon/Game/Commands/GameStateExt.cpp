@@ -647,6 +647,16 @@ GameValue MissionPhaseOn(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseOff(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseClear(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseList(const GameState* state);
+GameValue FunctionRegister(const GameState* state, GameValuePar oper1);
+GameValue FunctionRegisterAddon(const GameState* state, GameValuePar oper1);
+GameValue FunctionExists(const GameState* state, GameValuePar oper1);
+GameValue FunctionGet(const GameState* state, GameValuePar oper1);
+GameValue FunctionList(const GameState* state);
+GameValue FunctionUnregister(const GameState* state, GameValuePar oper1);
+GameValue FunctionUnregisterAddon(const GameState* state, GameValuePar oper1);
+GameValue FunctionClear(const GameState* state);
+GameValue FunctionClearAddon(const GameState* state);
+GameValue FunctionSpawn(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue PublicExec(const GameState* state, GameValuePar oper1);
 GameValue RemoteExec(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue RemoteExecCall(const GameState* state, GameValuePar oper1, GameValuePar oper2);
@@ -970,6 +980,9 @@ static const GameNular* GetExtNular(int& count)
         GameNular(GameBool, "isJIP", IsJIP),
         GameNular(GameArray, "eventList", EventList),
         GameNular(GameArray, "missionPhaseList", MissionPhaseList),
+        GameNular(GameArray, "functionList", FunctionList),
+        GameNular(GameBool, "functionClear", FunctionClear),
+        GameNular(GameBool, "functionClearAddon", FunctionClearAddon),
         GameNular(GameNothing, "serverPause", ServerPause),
         GameNular(GameNothing, "serverResume", ServerResume),
         GameNular(GameBool, "cacheClear", LocalDbCacheClear),
@@ -1117,6 +1130,12 @@ static const GameFunction* GetExtUnary(int& count)
         GameFunction(GameScalar, "missionPhaseOn", MissionPhaseOn, GameArray),
         GameFunction(GameBool, "missionPhaseOff", MissionPhaseOff, GameScalar),
         GameFunction(GameScalar, "missionPhaseClear", MissionPhaseClear, GameString),
+        GameFunction(GameBool, "functionRegister", FunctionRegister, GameArray),
+        GameFunction(GameBool, "functionRegisterAddon", FunctionRegisterAddon, GameArray),
+        GameFunction(GameBool, "functionExists", FunctionExists, GameString),
+        GameFunction(GameArray, "functionGet", FunctionGet, GameString),
+        GameFunction(GameBool, "functionUnregister", FunctionUnregister, GameString),
+        GameFunction(GameBool, "functionUnregisterAddon", FunctionUnregisterAddon, GameString),
         GameFunction(GameNothing, "publicVariable", PublicVariable, GameString),
         GameFunction(GameNothing, "saveMission", SaveMission, GameString),
         GameFunction(GameNothing, "publicVariableArray", PublicVariable, GameString),
@@ -1511,6 +1530,7 @@ static const GameOperator* GetExtBinary(int& count)
         GameOperator(GameNothing, "setFriend", function, CenterSetFriend, GameSide, GameArray),
 
         GameOperator(GameNothing, "setMarkerText", function, MarkerSetText, GameString, GameString),
+        GameOperator(GameScalar, "spawn", function, FunctionSpawn, GameVoid, GameString | GameCode),
         GameOperator(GameNothing, "setMarkerShape", function, MarkerSetShape, GameString, GameString),
         GameOperator(GameNothing, "setMarkerBrush", function, MarkerSetBrush, GameString, GameString),
         GameOperator(GameNothing, "setMarkerDir", function, MarkerSetDir, GameString, GameScalar),

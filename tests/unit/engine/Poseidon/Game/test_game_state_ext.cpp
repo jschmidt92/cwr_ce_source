@@ -66,6 +66,15 @@ GameValue MissionPhaseOn(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseOff(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseClear(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseList(const GameState* state);
+GameValue FunctionRegister(const GameState* state, GameValuePar oper1);
+GameValue FunctionRegisterAddon(const GameState* state, GameValuePar oper1);
+GameValue FunctionExists(const GameState* state, GameValuePar oper1);
+GameValue FunctionGet(const GameState* state, GameValuePar oper1);
+GameValue FunctionList(const GameState* state);
+GameValue FunctionUnregister(const GameState* state, GameValuePar oper1);
+GameValue FunctionUnregisterAddon(const GameState* state, GameValuePar oper1);
+GameValue FunctionClear(const GameState* state);
+GameValue FunctionClearAddon(const GameState* state);
 extern bool GUseFileBanks;
 
 namespace
@@ -359,6 +368,16 @@ TEST_CASE("VBS-derived functions remain registered in GGameState", "[game][gameS
     REQUIRE(ContainsName(nulars, "missionPhaseList"));
     REQUIRE(ContainsName(functions, "missionPhaseOff"));
     REQUIRE(ContainsName(functions, "missionPhaseClear"));
+    REQUIRE(ContainsName(functions, "functionRegister"));
+    REQUIRE(ContainsName(functions, "functionRegisterAddon"));
+    REQUIRE(ContainsName(functions, "functionExists"));
+    REQUIRE(ContainsName(functions, "functionGet"));
+    REQUIRE(ContainsName(functions, "functionUnregister"));
+    REQUIRE(ContainsName(functions, "functionUnregisterAddon"));
+    REQUIRE(ContainsName(nulars, "functionList"));
+    REQUIRE(ContainsName(nulars, "functionClear"));
+    REQUIRE(ContainsName(nulars, "functionClearAddon"));
+    REQUIRE(ContainsName(operators, "spawn"));
     REQUIRE(ContainsName(functions, "createGuardedPoint"));
     REQUIRE(ContainsName(functions, "deleteWaypoint"));
     REQUIRE(ContainsName(operators, "saveConfig"));
@@ -446,6 +465,78 @@ TEST_CASE("mission phase handlers can be listed, removed, and cleared", "[game][
     REQUIRE(static_cast<GameScalarType>(MissionPhaseClear(&GGameState, GameValue("serverInit"))) == 1.0f);
 
     Poseidon::ClearMissionPhaseHandlers();
+}
+
+TEST_CASE("registered script functions are callable through call", "[game][gameStateExt][functions]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+    FunctionClear(&GGameState);
+    FunctionClearAddon(&GGameState);
+
+    GameValue registration = GGameState.CreateGameValue(GameArray);
+    GameArrayType& args = registration;
+    args.Resize(2);
+    args[0] = GameValue("TST_fnc_addOne");
+    args[1] = GameValue(new GameDataCode("(_this select 0) + 1"));
+
+    REQUIRE((bool)FunctionRegister(&GGameState, registration));
+    REQUIRE((bool)FunctionExists(&GGameState, GameValue("TST_fnc_addOne")));
+
+    GameValue infoValue = FunctionGet(&GGameState, GameValue("TST_fnc_addOne"));
+    const GameArrayType& info = infoValue;
+    REQUIRE(info.Size() == 5);
+    REQUIRE(strcmp(((GameStringType)info[0]).Data(), "TST_fnc_addOne") == 0);
+    REQUIRE(strcmp(((GameStringType)info[1]).Data(), "mission") == 0);
+    REQUIRE(strcmp(((GameStringType)info[2]).Data(), "code") == 0);
+
+    GameValue listValue = FunctionList(&GGameState);
+    const GameArrayType& list = listValue;
+    REQUIRE(list.Size() == 1);
+
+    GameValue result = GGameState.EvaluateMultiple("[41] call TST_fnc_addOne");
+    REQUIRE(static_cast<GameScalarType>(result) == 42.0f);
+
+    REQUIRE((bool)FunctionUnregister(&GGameState, GameValue("tst_FNC_addone")));
+    REQUIRE_FALSE((bool)FunctionExists(&GGameState, GameValue("TST_fnc_addOne")));
+
+    FunctionClear(&GGameState);
+    FunctionClearAddon(&GGameState);
+}
+
+TEST_CASE("addon functions survive mission clears and restore after mission overrides",
+          "[game][gameStateExt][functions]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+    FunctionClear(&GGameState);
+    FunctionClearAddon(&GGameState);
+
+    GameValue registration = GGameState.CreateGameValue(GameArray);
+    GameArrayType& args = registration;
+    args.Resize(2);
+    args[0] = GameValue("TST_fnc_shared");
+    args[1] = GameValue(new GameDataCode("(_this select 0) + 1"));
+
+    REQUIRE((bool)FunctionRegisterAddon(&GGameState, registration));
+    REQUIRE(static_cast<GameScalarType>(GGameState.EvaluateMultiple("[41] call TST_fnc_shared")) == 42.0f);
+
+    args[1] = GameValue(new GameDataCode("(_this select 0) + 2"));
+    REQUIRE((bool)FunctionRegister(&GGameState, registration));
+    REQUIRE(static_cast<GameScalarType>(GGameState.EvaluateMultiple("[41] call TST_fnc_shared")) == 43.0f);
+
+    FunctionClear(&GGameState);
+    REQUIRE((bool)FunctionExists(&GGameState, GameValue("TST_fnc_shared")));
+    REQUIRE(static_cast<GameScalarType>(GGameState.EvaluateMultiple("[41] call TST_fnc_shared")) == 42.0f);
+
+    args[1] = GameValue(new GameDataCode("(_this select 0) + 3"));
+    REQUIRE((bool)FunctionRegister(&GGameState, registration));
+    REQUIRE(static_cast<GameScalarType>(GGameState.EvaluateMultiple("[41] call TST_fnc_shared")) == 44.0f);
+    REQUIRE((bool)FunctionUnregister(&GGameState, GameValue("TST_fnc_shared")));
+    REQUIRE(static_cast<GameScalarType>(GGameState.EvaluateMultiple("[41] call TST_fnc_shared")) == 42.0f);
+
+    REQUIRE((bool)FunctionUnregisterAddon(&GGameState, GameValue("TST_fnc_shared")));
+    REQUIRE_FALSE((bool)FunctionExists(&GGameState, GameValue("TST_fnc_shared")));
 }
 
 TEST_CASE("XOR1024 encryption registers and round-trips data", "[game][gameStateExt][encryption]")
