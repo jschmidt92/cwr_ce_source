@@ -41,3 +41,16 @@ In SQS-style scripts, keep the `jsonObject` call on one line:
 state = jsonObject [["position", getPosASL player], ["direction", getDir player], ["loadout", getUnitLoadout player]]
 dbSave ["actor", uid, state]
 ```
+
+## Unit Life State
+
+```sqf
+lifeState unit
+```
+
+Returns `"HEALTHY"`, `"INJURED"`, `"UNCONSCIOUS"`, or `"DEAD"`.
+
+## Script Events
+
+See [event-system.md](event-system.md) for `eventOn`, `eventGet`, `eventList`,
+`eventOff`, `eventClear`, and the domain-specific event emitters.

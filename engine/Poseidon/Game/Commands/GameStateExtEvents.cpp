@@ -1,4 +1,5 @@
 #include <Poseidon/Game/Commands/GameStateExtCommon.hpp>
+#include <Poseidon/AI/AI.hpp>
 #include <Poseidon/Game/Scripting/Scripts.hpp>
 #include <Poseidon/Network/Network.hpp>
 #include <Poseidon/World/World.hpp>
@@ -216,6 +217,71 @@ GameValue MakeEventArgs(const GameState* state, const char* scope, const char* n
     return value;
 }
 
+GameValue MakeEventHandlerInfo(const GameState* state, const EventHandler& handler)
+{
+    GameValue value = state->CreateGameValue(GameArray);
+    GameArrayType& array = value;
+    array.Resize(5);
+    array[0] = GameValue(static_cast<float>(handler.id));
+    array[1] = GameValue(handler.scope.c_str());
+    array[2] = GameValue(handler.name.c_str());
+    array[3] = GameValue(handler.inlineCode ? "code" : "script");
+    array[4] = GameValue(handler.body);
+    return value;
+}
+
+void AppendExpandedEventTarget(GameArrayType& out, GameValuePar target)
+{
+    if (target.GetType() == GameGroup)
+    {
+        AIGroup* group = GetGroup(target);
+        if (!group)
+        {
+            return;
+        }
+        for (int i = 0; i < MAX_UNITS_PER_GROUP; ++i)
+        {
+            AIUnit* unit = group->UnitWithID(i + 1);
+            if (!unit)
+            {
+                continue;
+            }
+            Person* person = unit->GetPerson();
+            if (!person)
+            {
+                continue;
+            }
+            out.Add(GameValueExt(person));
+        }
+        return;
+    }
+
+    if (target.GetType() == GameArray)
+    {
+        const GameArrayType& array = target;
+        for (int i = 0; i < array.Size(); ++i)
+        {
+            AppendExpandedEventTarget(out, array[i]);
+        }
+        return;
+    }
+
+    out.Add(target);
+}
+
+GameValue ExpandEventTargetGroups(const GameState* state, GameValuePar target)
+{
+    if (target.GetType() != GameGroup && target.GetType() != GameArray)
+    {
+        return target;
+    }
+
+    GameValue value = state->CreateGameValue(GameArray);
+    GameArrayType& array = value;
+    AppendExpandedEventTarget(array, target);
+    return value;
+}
+
 int DispatchEvent(const GameState* state, const std::string& scope, const std::string& name, GameValuePar payload,
                   int sender)
 {
@@ -262,7 +328,7 @@ GameValue EmitRemoteEventToTarget(const GameState* state, const char* scope, con
     GameArrayType& desc = descriptor;
     desc.Resize(2);
     desc[0] = GameValue("eventReceive");
-    desc[1] = target;
+    desc[1] = ExpandEventTargetGroups(state, target);
 
     RemoteExec(state, params, descriptor);
     return GameValue(true);
@@ -320,6 +386,38 @@ GameValue EventOn(const GameState* state, GameValuePar arg)
 
     EventHandlers().push_back(handler);
     return GameValue(static_cast<float>(handler.id));
+}
+
+GameValue EventGet(const GameState* state, GameValuePar arg)
+{
+    if (arg.GetType() != GameScalar)
+    {
+        state->TypeError(GameScalar, arg.GetType());
+        return state->CreateGameValue(GameArray);
+    }
+
+    const int id = toInt(static_cast<float>(arg));
+    for (const EventHandler& handler : EventHandlers())
+    {
+        if (handler.id == id)
+        {
+            return MakeEventHandlerInfo(state, handler);
+        }
+    }
+    return state->CreateGameValue(GameArray);
+}
+
+GameValue EventList(const GameState* state)
+{
+    GameValue value = state->CreateGameValue(GameArray);
+    GameArrayType& array = value;
+    const std::vector<EventHandler>& handlers = EventHandlers();
+    array.Realloc(static_cast<int>(handlers.size()));
+    for (const EventHandler& handler : handlers)
+    {
+        array.Add(MakeEventHandlerInfo(state, handler));
+    }
+    return value;
 }
 
 GameValue EventOff(const GameState* state, GameValuePar arg)
@@ -380,6 +478,15 @@ GameValue EventEmit(const GameState* state, GameValuePar arg)
     return GameValue(static_cast<float>(DispatchEvent(state, scope, name, array[2], -1)));
 }
 
+GameValue EventEmitLocal(const GameState* state, GameValuePar arg)
+{
+    if (!CheckEventNetworkEmitArg(state, arg))
+        return GameValue(0.0f);
+
+    const GameArrayType& array = arg;
+    return GameValue(static_cast<float>(DispatchEvent(state, "local", GameStringToStdString(array[0]), array[1], -1)));
+}
+
 GameValue EventEmitGlobal(const GameState* state, GameValuePar arg)
 {
     return EmitRemoteEvent(state, "global", arg, 0);
@@ -390,13 +497,13 @@ GameValue EventEmitServer(const GameState* state, GameValuePar arg)
     return EmitRemoteEvent(state, "server", arg, 2);
 }
 
-GameValue EventEmitClient(const GameState* state, GameValuePar arg)
+GameValue EventEmitTarget(const GameState* state, GameValuePar arg)
 {
     if (!CheckEventClientEmitArg(state, arg))
         return GameValue(false);
 
     const GameArrayType& array = arg;
-    return EmitRemoteEventToTarget(state, "client", GameStringToStdString(array[1]), array[2], array[0]);
+    return EmitRemoteEventToTarget(state, "target", GameStringToStdString(array[1]), array[2], array[0]);
 }
 
 GameValue EventReceive(const GameState* state, GameValuePar arg)

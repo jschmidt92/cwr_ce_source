@@ -105,6 +105,39 @@ GameValue ObjAlive(const GameState* state, GameValuePar oper1)
     return (!obj->IsDammageDestroyed());
 }
 
+GameValue ObjLifeState(const GameState* state, GameValuePar oper1)
+{
+    Object* obj = GetObject(oper1);
+    if (!obj)
+    {
+        return "DEAD";
+    }
+
+    EntityAI* ai = dyn_cast<EntityAI>(obj);
+    AIUnit* unit = ai ? ai->CommanderUnit() : nullptr;
+    if (unit)
+    {
+        switch (unit->GetLifeState())
+        {
+            case AIUnit::LSDead:
+            case AIUnit::LSDeadInRespawn:
+                return "DEAD";
+            case AIUnit::LSUnconscious:
+            case AIUnit::LSAsleep:
+                return "UNCONSCIOUS";
+            case AIUnit::LSAlive:
+            case AIUnit::NLifeStates:
+                break;
+        }
+    }
+
+    if (obj->IsDammageDestroyed())
+    {
+        return "DEAD";
+    }
+    return obj->GetTotalDammage() > 0.0f ? "INJURED" : "HEALTHY";
+}
+
 GameValue ObjCanMove(const GameState* state, GameValuePar oper1)
 {
     Object* obj = GetObject(oper1);

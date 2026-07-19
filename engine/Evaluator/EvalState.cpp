@@ -274,6 +274,17 @@ static GameValue CmdGetDammage(const GameState* state, GameValuePar arg)
     return GameValue(obj ? obj->damage : 0.0f);
 }
 
+static GameValue CmdLifeState(const GameState* state, GameValuePar arg)
+{
+    int id = getObjectId(arg);
+    auto* obj = getEval(state)->objects.getObject(id);
+    if (!obj || !obj->alive || obj->damage >= 1.0f)
+    {
+        return GameValue("DEAD");
+    }
+    return GameValue(obj->damage > 0.0f ? "INJURED" : "HEALTHY");
+}
+
 static GameValue CmdIsNull(const GameState* state, GameValuePar arg)
 {
     if (!arg.GetData())
@@ -344,6 +355,7 @@ void EvalState::RegisterObjectCommands()
     NewFunction(GameFunction(GameArray, "getPos", CmdGetPos, MockGameObject));
     NewFunction(GameFunction(GameScalar, "getDir", CmdGetDir, MockGameObject));
     NewFunction(GameFunction(GameScalar, "getDammage", CmdGetDammage, MockGameObject));
+    NewFunction(GameFunction(GameString, "lifeState", CmdLifeState, MockGameObject));
     NewFunction(GameFunction(GameBool, "isNull", CmdIsNull, GameVoid));
 
     NewOperator(GameOperator(GameNothing, "setPos", function, CmdSetPos, MockGameObject, GameArray));

@@ -38,6 +38,7 @@ bool IsAddonMetadataAccepted(const char* product, const char* encryption, const 
 std::string BuildMPReportPathForUserDir(const std::string& userDir, const std::tm& tm);
 bool DefaultAdvancedEditorMode();
 bool LoadAdvancedEditorModeFromUserParams(const char* userParamsPath);
+void ClearScriptEventHandlers();
 } // namespace Poseidon
 
 namespace Poseidon
@@ -56,6 +57,10 @@ GameValue ClassOpen(const GameState* state, GameValuePar oper1, GameValuePar ope
 GameValue ClassAdd(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue ValueGet(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue ValueAdd(const GameState* state, GameValuePar oper1, GameValuePar oper2);
+GameValue EventOn(const GameState* state, GameValuePar oper1);
+GameValue EventGet(const GameState* state, GameValuePar oper1);
+GameValue EventList(const GameState* state);
+GameValue EventOff(const GameState* state, GameValuePar oper1);
 extern bool GUseFileBanks;
 
 namespace
@@ -336,6 +341,15 @@ TEST_CASE("VBS-derived functions remain registered in GGameState", "[game][gameS
     REQUIRE(ContainsName(functions, "VBS_kills"));
     REQUIRE(ContainsName(functions, "VBS_killed"));
     REQUIRE(ContainsName(functions, "VBS_injuries"));
+    REQUIRE(ContainsName(functions, "eventOn"));
+    REQUIRE(ContainsName(functions, "eventGet"));
+    REQUIRE(ContainsName(nulars, "eventList"));
+    REQUIRE(ContainsName(functions, "eventOff"));
+    REQUIRE(ContainsName(functions, "eventClear"));
+    REQUIRE(ContainsName(functions, "eventEmitLocal"));
+    REQUIRE(ContainsName(functions, "eventEmitGlobal"));
+    REQUIRE(ContainsName(functions, "eventEmitServer"));
+    REQUIRE(ContainsName(functions, "eventEmitTarget"));
     REQUIRE(ContainsName(functions, "createGuardedPoint"));
     REQUIRE(ContainsName(functions, "deleteWaypoint"));
     REQUIRE(ContainsName(operators, "saveConfig"));
@@ -347,6 +361,45 @@ TEST_CASE("VBS-derived functions remain registered in GGameState", "[game][gameS
     REQUIRE(ContainsName(operators, "triggerAttachVehicle"));
     REQUIRE(ContainsName(operators, "setEffectCondition"));
     REQUIRE(ContainsName(operators, "addWaypoint"));
+}
+
+TEST_CASE("script event handlers can be inspected by id and listed", "[game][gameStateExt][events]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+    Poseidon::ClearScriptEventHandlers();
+
+    GameValue registration = GGameState.CreateGameValue(GameArray);
+    GameArrayType& args = registration;
+    args.Resize(3);
+    args[0] = GameValue("local");
+    args[1] = GameValue("actorLoaded");
+    args[2] = GameValue("events\\on_actor_loaded.sqf");
+
+    GameValue idValue = EventOn(&GGameState, registration);
+    REQUIRE(static_cast<GameScalarType>(idValue) == 1.0f);
+
+    GameValue infoValue = EventGet(&GGameState, idValue);
+    const GameArrayType& info = infoValue;
+    REQUIRE(info.Size() == 5);
+    REQUIRE(static_cast<GameScalarType>(info[0]) == 1.0f);
+    REQUIRE(strcmp(((GameStringType)info[1]).Data(), "local") == 0);
+    REQUIRE(strcmp(((GameStringType)info[2]).Data(), "actorLoaded") == 0);
+    REQUIRE(strcmp(((GameStringType)info[3]).Data(), "script") == 0);
+    REQUIRE(strcmp(((GameStringType)info[4]).Data(), "events\\on_actor_loaded.sqf") == 0);
+
+    GameValue listValue = EventList(&GGameState);
+    const GameArrayType& list = listValue;
+    REQUIRE(list.Size() == 1);
+    const GameArrayType& listedInfo = list[0];
+    REQUIRE(static_cast<GameScalarType>(listedInfo[0]) == 1.0f);
+
+    REQUIRE((bool)EventOff(&GGameState, idValue));
+    GameValue emptyListValue = EventList(&GGameState);
+    const GameArrayType& emptyList = emptyListValue;
+    REQUIRE(emptyList.Size() == 0);
+
+    Poseidon::ClearScriptEventHandlers();
 }
 
 TEST_CASE("XOR1024 encryption registers and round-trips data", "[game][gameStateExt][encryption]")

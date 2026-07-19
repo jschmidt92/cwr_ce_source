@@ -178,6 +178,24 @@ TEST_CASE("Object commands - setDammage makes alive false", "[evaluator][mock][c
     REQUIRE((float)dmg == Catch::Approx(1.0f));
 }
 
+TEST_CASE("Object commands - lifeState derives health labels", "[evaluator][mock][commands]")
+{
+    EvalFixture f;
+    int id = f.state().objects.createObject("SyntheticSoldierWest", 0, 0, 0);
+    f.state().VarSet("testObj", makeObjectValue(id));
+
+    GameValue healthy = f.state().Evaluate("lifeState testObj");
+    REQUIRE(strcmp(((GameStringType)healthy).Data(), "HEALTHY") == 0);
+
+    f.state().Execute("testObj setDammage 0.5");
+    GameValue injured = f.state().Evaluate("lifeState testObj");
+    REQUIRE(strcmp(((GameStringType)injured).Data(), "INJURED") == 0);
+
+    f.state().Execute("testObj setDammage 1.0");
+    GameValue dead = f.state().Evaluate("lifeState testObj");
+    REQUIRE(strcmp(((GameStringType)dead).Data(), "DEAD") == 0);
+}
+
 TEST_CASE("Object commands - setDir/getDir", "[evaluator][mock][commands]")
 {
     EvalFixture f;

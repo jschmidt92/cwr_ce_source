@@ -523,6 +523,7 @@ GameValue MarkerGetPos(const GameState* state, GameValuePar oper1);
 GameValue MarkerGetSize(const GameState* state, GameValuePar oper1);
 GameValue MarkerGetType(const GameState* state, GameValuePar oper1);
 GameValue ObjAlive(const GameState* state, GameValuePar oper1);
+GameValue ObjLifeState(const GameState* state, GameValuePar oper1);
 GameValue ObjBehaviour(const GameState* state, GameValuePar oper1);
 GameValue ObjCanFire(const GameState* state, GameValuePar oper1);
 GameValue ObjCanMove(const GameState* state, GameValuePar oper1);
@@ -632,12 +633,15 @@ GameValue LoadMission(const GameState* state, GameValuePar oper1);
 GameValue OnPlayerConnected(const GameState* state, GameValuePar oper1);
 GameValue OnPlayerDisconnected(const GameState* state, GameValuePar oper1);
 GameValue EventOn(const GameState* state, GameValuePar oper1);
+GameValue EventGet(const GameState* state, GameValuePar oper1);
+GameValue EventList(const GameState* state);
 GameValue EventOff(const GameState* state, GameValuePar oper1);
 GameValue EventClear(const GameState* state, GameValuePar oper1);
 GameValue EventEmit(const GameState* state, GameValuePar oper1);
+GameValue EventEmitLocal(const GameState* state, GameValuePar oper1);
 GameValue EventEmitGlobal(const GameState* state, GameValuePar oper1);
 GameValue EventEmitServer(const GameState* state, GameValuePar oper1);
-GameValue EventEmitClient(const GameState* state, GameValuePar oper1);
+GameValue EventEmitTarget(const GameState* state, GameValuePar oper1);
 GameValue EventReceive(const GameState* state, GameValuePar oper1);
 GameValue PublicExec(const GameState* state, GameValuePar oper1);
 GameValue RemoteExec(const GameState* state, GameValuePar oper1, GameValuePar oper2);
@@ -960,6 +964,7 @@ static const GameNular* GetExtNular(int& count)
         GameNular(GameString, "voiceLanguage", VoiceLanguage),
         GameNular(GameBool, "isServer", IsServer),
         GameNular(GameBool, "isJIP", IsJIP),
+        GameNular(GameArray, "eventList", EventList),
         GameNular(GameNothing, "serverPause", ServerPause),
         GameNular(GameNothing, "serverResume", ServerResume),
         GameNular(GameBool, "cacheClear", LocalDbCacheClear),
@@ -987,6 +992,7 @@ static const GameFunction* GetExtUnary(int& count)
         GameFunction(GameBool, "isNull", ObjIsNull, GameObject),
         GameFunction(GameBool, "isNull", GrpIsNull, GameGroup),
         GameFunction(GameBool, "alive", ObjAlive, GameObject),
+        GameFunction(GameString, "lifeState", ObjLifeState, GameObject),
         GameFunction(GameBool, "local", ObjIsLocal, GameObject),
         GameFunction(GameBool, "requiredVersion", RequiredVersion, GameString),
         GameFunction(GameArray, "getPos", ObjGetPos, GameObject),
@@ -1094,12 +1100,14 @@ static const GameFunction* GetExtUnary(int& count)
         GameFunction(GameNothing, "onPlayerConnected", OnPlayerConnected, GameString),
         GameFunction(GameNothing, "onPlayerDisconnected", OnPlayerDisconnected, GameString),
         GameFunction(GameScalar, "eventOn", EventOn, GameArray),
+        GameFunction(GameArray, "eventGet", EventGet, GameScalar),
         GameFunction(GameBool, "eventOff", EventOff, GameScalar),
         GameFunction(GameScalar, "eventClear", EventClear, GameArray),
         GameFunction(GameScalar, "eventEmit", EventEmit, GameArray),
+        GameFunction(GameScalar, "eventEmitLocal", EventEmitLocal, GameArray),
         GameFunction(GameBool, "eventEmitGlobal", EventEmitGlobal, GameArray),
         GameFunction(GameBool, "eventEmitServer", EventEmitServer, GameArray),
-        GameFunction(GameBool, "eventEmitClient", EventEmitClient, GameArray),
+        GameFunction(GameBool, "eventEmitTarget", EventEmitTarget, GameArray),
         GameFunction(GameScalar, "eventReceive", EventReceive, GameArray),
         GameFunction(GameNothing, "publicVariable", PublicVariable, GameString),
         GameFunction(GameNothing, "saveMission", SaveMission, GameString),
