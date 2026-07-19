@@ -299,7 +299,7 @@ GameValue GameState::Const() const
         if (closed)
         {
             _e->_pos = end + 1;
-            return RString(start, end - start);
+            return GameValue(new GameDataCode(RString(start, end - start)));
         }
         else
         {
@@ -1129,24 +1129,27 @@ static const GameOperator* GetDefaultBinary(int* outSize = nullptr)
         GameOperator(GameVoid, "select", function, ListSelect, GameArray, GameBool),
         GameOperator(GameNothing, "set", function, ListSet, GameArray, GameArray),
         GameOperator(GameNothing, "resize", function, ListResize, GameArray, GameScalar),
-        GameOperator(GameScalar, "count", function, ListCountCond, GameString, GameArray),
-        GameOperator(GameNothing, "forEach", function, ListForEach, GameString, GameArray),
+        GameOperator(GameScalar, "count", function, ListCountCond, GameString | GameCode, GameArray),
+        GameOperator(GameNothing, "forEach", function, ListForEach, GameString | GameCode, GameArray),
         GameOperator(GameBool, "in", function, ListIsIn, GameVoid, GameArray),
         GameOperator(GameScalar, "find", function, ListFind, GameArray, GameVoid),
 
-        GameOperator(GameAny, "then", function, StringThen, GameIf, GameString),
+        GameOperator(GameAny, "then", function, StringThen, GameIf, GameString | GameCode),
         GameOperator(GameAny, "then", function, ArrayThen, GameIf, GameArray),
-        GameOperator(GameAny, "exitWith", function, StringExitWith, GameIf, GameString),
+        GameOperator(GameAny, "exitWith", function, StringExitWith, GameIf, GameString | GameCode),
         GameOperator(GameArray, "else", functionFirst, StringElse, GameString, GameString),
-        GameOperator(GameNothing, "do", function, StringRepeat, GameWhile, GameString),
+        GameOperator(GameArray, "else", functionFirst, StringElse, GameCode, GameCode),
+        GameOperator(GameArray, "else", functionFirst, StringElse, GameString, GameCode),
+        GameOperator(GameArray, "else", functionFirst, StringElse, GameCode, GameString),
+        GameOperator(GameNothing, "do", function, StringRepeat, GameWhile, GameString | GameCode),
 
         // for "var" from N to M [step S] do { body }
         GameOperator(GameForFrom, "from", function, ForFromOp, GameFor, GameScalar),
         GameOperator(GameForTo, "to", function, ForToOp, GameForFrom, GameScalar),
         GameOperator(GameForTo, "step", function, ForStepOp, GameForTo, GameScalar),
-        GameOperator(GameAny, "do", function, ForDoOp, GameForTo, GameString),
+        GameOperator(GameAny, "do", function, ForDoOp, GameForTo, GameString | GameCode),
 
-        GameOperator(GameAny, "call", function, StringCall, GameVoid, GameString),
+        GameOperator(GameAny, "call", function, StringCall, GameVoid, GameString | GameCode),
     };
     if (outSize)
     {
@@ -1185,13 +1188,13 @@ static const GameFunction* GetDefaultUnary(int* outSize = nullptr)
         GameFunction(GameBool, "not", BoolNot, GameBool),
 
         GameFunction(GameScalar, "count", ListCount, GameArray),
-        GameFunction(GameAny, "call", StringCallNoArg, GameString),
+        GameFunction(GameAny, "call", StringCallNoArg, GameString | GameCode),
         GameFunction(GameNothing, "comment", StringIgnore, GameString),
         GameFunction(GameNothing, "private", StringLocal, GameString | GameArray),
         GameFunction(GameAny, "parseSimpleArray", ParseSimpleArray, GameString),
 
         GameFunction(GameIf, "if", IfBool, GameBool),
-        GameFunction(GameWhile, "while", WhileString, GameString),
+        GameFunction(GameWhile, "while", WhileString, GameString | GameCode),
         GameFunction(GameFor, "for", ForVarString, GameString),
     };
     if (outSize)
@@ -1940,6 +1943,10 @@ RString GameDataNil::GetText() const
         {
             strcat(buf, "string"), rest &= ~GameString;
         }
+        else if (rest & GameCode)
+        {
+            strcat(buf, "code"), rest &= ~GameCode;
+        }
         else if (rest & GameNothing)
         {
             strcat(buf, "nothing"), rest &= ~GameNothing;
@@ -2021,6 +2028,11 @@ LSError GameDataBool::Serialize(ParamArchive& ar)
 RString GameDataString::GetText() const
 {
     return RString("\"") + _value + RString("\"");
+}
+
+RString GameDataCode::GetText() const
+{
+    return RString("{") + GetString() + RString("}");
 }
 
 bool GameDataString::IsEqualTo(const GameData* data) const
@@ -2333,6 +2345,10 @@ GameData* CreateGameDataString()
 {
     return new GameDataString();
 }
+GameData* CreateGameDataCode()
+{
+    return new GameDataCode();
+}
 GameData* CreateGameDataNothing()
 {
     return new GameDataNothing();
@@ -2365,6 +2381,7 @@ void GameState::Init()
     NewType("BOOL", GameBool, CreateGameDataBool, DefaultInfoFunctions()->GetTypeName(GameBool));
     NewType("ARRAY", GameArray, CreateGameDataArray, DefaultInfoFunctions()->GetTypeName(GameArray));
     NewType("STRING", GameString, CreateGameDataString, DefaultInfoFunctions()->GetTypeName(GameString));
+    NewType("CODE", GameCode, CreateGameDataCode, DefaultInfoFunctions()->GetTypeName(GameCode));
     NewType("NOTHING", GameNothing, CreateGameDataNothing, DefaultInfoFunctions()->GetTypeName(GameNothing));
 
     NewType("IF", GameIf, CreateGameDataIf, DefaultInfoFunctions()->GetTypeName(GameIf));

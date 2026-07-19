@@ -46,6 +46,7 @@ const GameType GameArray(2);
 const GameType GameBool(4);
 const GameType GameString(8);
 const GameType GameNothing(16);
+const GameType GameCode(32);
 const GameType GameIf(0x1000000);
 const GameType GameWhile(0x2000000);
 const GameType GameFor(0x4000000);
@@ -205,6 +206,17 @@ class GameDataString : public GameData
 #endif
 
     USE_FAST_ALLOCATOR
+};
+
+class GameDataCode : public GameDataString
+{
+  public:
+    GameDataCode() = default;
+    GameDataCode(GameStringType value) : GameDataString(value) {}
+    GameType GetType() const override { return GameCode; }
+    RString GetText() const override;
+    const char* GetTypeName() const override { return "code"; }
+    GameData* Clone() const override { return new GameDataCode(*this); }
 };
 
 class GameDataBool : public GameData

@@ -69,6 +69,7 @@ namespace Poseidon
 {
 
 void ShowCinemaBorder(bool show);
+void ClearScriptEventHandlers();
 
 int GetNetworkPort();
 RString GetNetworkPassword();
@@ -154,6 +155,8 @@ void CopyDirectoryStructure(const char* dst, const char* src)
 }
 void RunInitScript()
 {
+    Poseidon::ClearScriptEventHandlers();
+
     RString initScript = GetMissionDirectory() + RString("init.sqs");
     if (QIFStreamB::FileExist(initScript))
     {

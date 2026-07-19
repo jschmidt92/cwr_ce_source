@@ -442,6 +442,9 @@ GameValue UsedVersion(const GameState* state);
 GameValue VoiceLanguage(const GameState* state);
 GameValue WorldName(const GameState* state);
 GameValue WorldSize(const GameState* state);
+GameValue LocalDbRoot(const GameState* state);
+GameValue LocalDbCacheClear(const GameState* state);
+GameValue LocalDbCacheFlushAll(const GameState* state);
 
 // Unary functions
 GameValue BriefingOnGear(const GameState* state, GameValuePar oper1);
@@ -534,6 +537,7 @@ GameValue ObjFlee(const GameState* state, GameValuePar oper1);
 GameValue ObjFuel(const GameState* state, GameValuePar oper1);
 GameValue ObjGetAllMagazines(const GameState* state, GameValuePar oper1);
 GameValue ObjGetAllWeapons(const GameState* state, GameValuePar oper1);
+GameValue ObjUnitLoadout(const GameState* state, GameValuePar oper1);
 GameValue ObjGetDammage(const GameState* state, GameValuePar oper1);
 GameValue ObjGetDir(const GameState* state, GameValuePar oper1);
 GameValue ObjGetFlag(const GameState* state, GameValuePar oper1);
@@ -579,6 +583,39 @@ GameValue ObjWeaponsFromPool(const GameState* state, GameValuePar oper1);
 GameValue PlayMusic(const GameState* state, GameValuePar oper1);
 GameValue PlaySound(const GameState* state, GameValuePar oper1);
 GameValue SoundLength(const GameState* state, GameValuePar oper1);
+GameValue LocalDbSave(const GameState* state, GameValuePar oper1);
+GameValue LocalDbLoad(const GameState* state, GameValuePar oper1);
+GameValue LocalDbRemove(const GameState* state, GameValuePar oper1);
+GameValue LocalDbExists(const GameState* state, GameValuePar oper1);
+GameValue LocalDbList(const GameState* state, GameValuePar oper1);
+GameValue LocalDbCacheLoad(const GameState* state, GameValuePar oper1);
+GameValue LocalDbCacheGet(const GameState* state, GameValuePar oper1);
+GameValue LocalDbCacheSet(const GameState* state, GameValuePar oper1);
+GameValue LocalDbCacheFlush(const GameState* state, GameValuePar oper1);
+GameValue LocalDbCacheRemove(const GameState* state, GameValuePar oper1);
+GameValue JsonValid(const GameState* state, GameValuePar oper1);
+GameValue JsonGetString(const GameState* state, GameValuePar oper1);
+GameValue JsonGetNumber(const GameState* state, GameValuePar oper1);
+GameValue JsonGetBool(const GameState* state, GameValuePar oper1);
+GameValue JsonGetArray(const GameState* state, GameValuePar oper1);
+GameValue JsonGet(const GameState* state, GameValuePar oper1);
+GameValue JsonSelect(const GameState* state, GameValuePar oper1);
+GameValue JsonPathGet(const GameState* state, GameValuePar oper1);
+GameValue JsonPathSet(const GameState* state, GameValuePar oper1);
+GameValue JsonPathRemove(const GameState* state, GameValuePar oper1);
+GameValue JsonStringify(const GameState* state, GameValuePar oper1);
+GameValue JsonObject(const GameState* state, GameValuePar oper1);
+GameValue JsonSet(const GameState* state, GameValuePar oper1);
+GameValue JsonRemove(const GameState* state, GameValuePar oper1);
+GameValue JsonHas(const GameState* state, GameValuePar oper1);
+GameValue JsonKeys(const GameState* state, GameValuePar oper1);
+GameValue JsonValues(const GameState* state, GameValuePar oper1);
+GameValue JsonCount(const GameState* state, GameValuePar oper1);
+GameValue JsonAt(const GameState* state, GameValuePar oper1);
+GameValue JsonPush(const GameState* state, GameValuePar oper1);
+GameValue JsonInsert(const GameState* state, GameValuePar oper1);
+GameValue JsonSetAt(const GameState* state, GameValuePar oper1);
+GameValue JsonDeleteAt(const GameState* state, GameValuePar oper1);
 GameValue PlayersNumber(const GameState* state, GameValuePar oper1);
 GameValue PoolAddMagazine(const GameState* state, GameValuePar oper1);
 GameValue PoolAddWeapon(const GameState* state, GameValuePar oper1);
@@ -589,6 +626,13 @@ GameValue PoolSetWeapons(const GameState* state, GameValuePar oper1);
 GameValue LoadMission(const GameState* state, GameValuePar oper1);
 GameValue OnPlayerConnected(const GameState* state, GameValuePar oper1);
 GameValue OnPlayerDisconnected(const GameState* state, GameValuePar oper1);
+GameValue EventOn(const GameState* state, GameValuePar oper1);
+GameValue EventOff(const GameState* state, GameValuePar oper1);
+GameValue EventClear(const GameState* state, GameValuePar oper1);
+GameValue EventEmit(const GameState* state, GameValuePar oper1);
+GameValue EventEmitGlobal(const GameState* state, GameValuePar oper1);
+GameValue EventEmitServer(const GameState* state, GameValuePar oper1);
+GameValue EventReceive(const GameState* state, GameValuePar oper1);
 GameValue PublicExec(const GameState* state, GameValuePar oper1);
 GameValue RemoteExec(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue RemoteExecCall(const GameState* state, GameValuePar oper1, GameValuePar oper2);
@@ -747,6 +791,7 @@ GameValue ObjSaveIdentity(const GameState* state, GameValuePar oper1, GameValueP
 GameValue ObjSaveStatus(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue ObjSay(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue ObjSelectWeapon(const GameState* state, GameValuePar oper1, GameValuePar oper2);
+GameValue ObjSetUnitLoadout(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue ObjSetAmmoCargo(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue ObjSetCaptive(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue ObjSetDammage(const GameState* state, GameValuePar oper1, GameValuePar oper2);
@@ -902,6 +947,7 @@ static const GameNular* GetExtNular(int& count)
 
         GameNular(GameFile, "newConfig", ConfigNew),
         GameNular(GameArray, "listConfigNames", ConfigListNames),
+        GameNular(GameString, "dbRoot", LocalDbRoot),
         GameNular(GameString, "missionName", MissionName),
         GameNular(GameArray, "missionStart", MissionStart),
         GameNular(GameString, "getWorld", WorldName),
@@ -910,6 +956,8 @@ static const GameNular* GetExtNular(int& count)
         GameNular(GameBool, "isJIP", IsJIP),
         GameNular(GameNothing, "serverPause", ServerPause),
         GameNular(GameNothing, "serverResume", ServerResume),
+        GameNular(GameBool, "cacheClear", LocalDbCacheClear),
+        GameNular(GameBool, "cacheFlushAll", LocalDbCacheFlushAll),
 
         GameNular(GameScalar, "worldSize", WorldSize),
         GameNular(GameScalar, "mapWidth", MapWidth),
@@ -1039,6 +1087,13 @@ static const GameFunction* GetExtUnary(int& count)
         GameFunction(GameNothing, "loadMission", LoadMission, GameString),
         GameFunction(GameNothing, "onPlayerConnected", OnPlayerConnected, GameString),
         GameFunction(GameNothing, "onPlayerDisconnected", OnPlayerDisconnected, GameString),
+        GameFunction(GameScalar, "eventOn", EventOn, GameArray),
+        GameFunction(GameBool, "eventOff", EventOff, GameScalar),
+        GameFunction(GameScalar, "eventClear", EventClear, GameArray),
+        GameFunction(GameScalar, "eventEmit", EventEmit, GameArray),
+        GameFunction(GameBool, "eventEmitGlobal", EventEmitGlobal, GameArray),
+        GameFunction(GameBool, "eventEmitServer", EventEmitServer, GameArray),
+        GameFunction(GameScalar, "eventReceive", EventReceive, GameArray),
         GameFunction(GameNothing, "publicVariable", PublicVariable, GameString),
         GameFunction(GameNothing, "saveMission", SaveMission, GameString),
         GameFunction(GameNothing, "publicVariableArray", PublicVariable, GameString),
@@ -1050,6 +1105,39 @@ static const GameFunction* GetExtUnary(int& count)
 
         GameFunction(GameString, "format", StrFormat, GameArray),
         GameFunction(GameString, "localize", StrLocalize, GameString),
+        GameFunction(GameBool, "dbSave", LocalDbSave, GameArray),
+        GameFunction(GameString, "dbLoad", LocalDbLoad, GameArray),
+        GameFunction(GameBool, "dbRemove", LocalDbRemove, GameArray),
+        GameFunction(GameBool, "dbExists", LocalDbExists, GameArray),
+        GameFunction(GameArray, "dbList", LocalDbList, GameString),
+        GameFunction(GameBool, "cacheLoad", LocalDbCacheLoad, GameArray),
+        GameFunction(GameString, "cacheGet", LocalDbCacheGet, GameArray),
+        GameFunction(GameBool, "cacheSet", LocalDbCacheSet, GameArray),
+        GameFunction(GameBool, "cacheFlush", LocalDbCacheFlush, GameArray),
+        GameFunction(GameBool, "cacheRemove", LocalDbCacheRemove, GameArray),
+        GameFunction(GameBool, "jsonValid", JsonValid, GameString),
+        GameFunction(GameString, "jsonGetString", JsonGetString, GameArray),
+        GameFunction(GameScalar, "jsonGetNumber", JsonGetNumber, GameArray),
+        GameFunction(GameBool, "jsonGetBool", JsonGetBool, GameArray),
+        GameFunction(GameArray, "jsonGetArray", JsonGetArray, GameArray),
+        GameFunction(GameAny, "jsonGet", JsonGet, GameArray),
+        GameFunction(GameArray, "jsonSelect", JsonSelect, GameArray),
+        GameFunction(GameAny, "jsonPathGet", JsonPathGet, GameArray),
+        GameFunction(GameString, "jsonPathSet", JsonPathSet, GameArray),
+        GameFunction(GameString, "jsonPathRemove", JsonPathRemove, GameArray),
+        GameFunction(GameString, "jsonStringify", JsonStringify, GameAny),
+        GameFunction(GameString, "jsonObject", JsonObject, GameArray),
+        GameFunction(GameString, "jsonSet", JsonSet, GameArray),
+        GameFunction(GameString, "jsonRemove", JsonRemove, GameArray),
+        GameFunction(GameBool, "jsonHas", JsonHas, GameArray),
+        GameFunction(GameArray, "jsonKeys", JsonKeys, GameString),
+        GameFunction(GameArray, "jsonValues", JsonValues, GameString),
+        GameFunction(GameScalar, "jsonCount", JsonCount, GameString),
+        GameFunction(GameAny, "jsonAt", JsonAt, GameArray),
+        GameFunction(GameString, "jsonPush", JsonPush, GameArray),
+        GameFunction(GameString, "jsonInsert", JsonInsert, GameArray),
+        GameFunction(GameString, "jsonSetAt", JsonSetAt, GameArray),
+        GameFunction(GameString, "jsonDeleteAt", JsonDeleteAt, GameArray),
 
         GameFunction(GameNothing, "skipTime", SkipDayTime, GameScalar),
         GameFunction(GameNothing, "setViewDistance", SetViewDistance, GameScalar),
@@ -1138,6 +1226,7 @@ static const GameFunction* GetExtUnary(int& count)
         GameFunction(GameString, "secondaryWeapon", ObjGetSecondaryWeapon, GameObject),
         GameFunction(GameArray, "weapons", ObjGetAllWeapons, GameObject),
         GameFunction(GameArray, "magazines", ObjGetAllMagazines, GameObject),
+        GameFunction(GameArray, "getUnitLoadout", ObjUnitLoadout, GameObject),
 
         GameFunction(GameObject, "object", GetObject, GameScalar),
 
@@ -1258,6 +1347,7 @@ static const GameOperator* GetExtBinary(int& count)
         GameOperator(GameNothing, "removeMagazine", function, ObjRemoveMagazine, GameObject, GameString),
         GameOperator(GameNothing, "removeMagazines", function, ObjRemoveMagazines, GameObject, GameString),
         GameOperator(GameNothing, "selectWeapon", function, ObjSelectWeapon, GameObject, GameString),
+        GameOperator(GameNothing, "setUnitLoadout", function, ObjSetUnitLoadout, GameObject, GameArray),
         GameOperator(GameNothing, "fire", function, ObjFire, GameObject, GameString),
         GameOperator(GameNothing, "fire", function, ObjFireEx, GameObject, GameArray),
         GameOperator(GameScalar, "muzzleReloadTime", function, ObjMuzzleReloadTime, GameObject, GameString),

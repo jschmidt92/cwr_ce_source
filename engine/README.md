@@ -13,3 +13,7 @@ Poseidon (+ PoseidonGL33, PoseidonOpenAL)  ← full game engine
 | **PoseidonOpenAL** | `PoseidonOpenAL/` | `PoseidonOpenAL.lib` | OpenAL audio backend (linked by client apps) |
 | **PoseidonFormats** | `PoseidonFormats/` | `.dll` / `.lib` | C API for P3D/PAA/PBO/RTM (used by Blender addon) |
 | **Trident** | `Trident/` | `tri` | Rust-based test runner and integration tool |
+
+## Notes
+
+- [Documentation](../docs/README.md)
