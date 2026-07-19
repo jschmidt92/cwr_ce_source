@@ -57,7 +57,67 @@ dbUpdate ["database", "key", { jsonSet [_this, "cash", (jsonGet [_this, "cash"])
 ```
 
 `dbSave` writes immediately to disk. `dbLoad` reads the record from disk and
-returns the stored JSON string.
+returns the stored JSON string. These commands are synchronous and should be
+kept out of hot gameplay paths.
+
+## Async Database Commands
+
+```sqf
+job = dbAsyncSave ["database", "key", json]
+job = dbAsyncLoad ["database", "key"]
+job = dbAsyncRemove ["database", "key"]
+job = dbAsyncExists ["database", "key"]
+job = dbAsyncList "database"
+job = dbAsyncFind ["database", "field", value]
+job = dbAsyncFindPath ["database", ["nested", "field"], value]
+job = dbAsyncIndex ["database", "field"]
+job = dbAsyncIndexPath ["database", ["nested", "field"]]
+dbAsyncDone job
+dbAsyncResult job
+dbAsyncClear job
+dbAsyncJobs
+```
+
+The async commands copy their arguments immediately, enqueue file work on the
+local DB worker thread, and return a numeric job id. They do not wait for disk
+I/O on the script thread. Invalid arguments or unavailable queued data return
+`-1`.
+
+`dbAsyncResult` returns an array:
+
+```sqf
+[jobId, status, ok, result]
+```
+
+`status` is `"queued"`, `"running"`, or `"done"`. `ok` is meaningful once the
+status is `"done"`.
+
+The result field matches the operation:
+
+- `dbAsyncLoad`: stored JSON string, or `""`/nil on failure.
+- `dbAsyncExists`: boolean.
+- `dbAsyncList`, `dbAsyncFind`, `dbAsyncFindPath`: array of keys.
+- `dbAsyncIndex`, `dbAsyncIndexPath`: array of `[fieldValue, [key, ...]]`.
+- `dbAsyncSave`, `dbAsyncRemove`: no result payload; use `ok`.
+
+Example:
+
+```sqf
+job = dbAsyncLoad ["actor", "76561198027566824"]
+
+#poll
+~0.1
+? !(dbAsyncDone job) : goto "poll"
+
+result = dbAsyncResult job
+ok = result select 2
+state = result select 3
+dbAsyncClear job
+```
+
+`dbUpdate` remains synchronous because it executes a script code block in the VM
+between load and save. Use async load/save with an explicit script-side update
+flow when a non-blocking gameplay path is required.
 
 Example:
 
@@ -146,6 +206,8 @@ cacheGet ["database", "key"]
 cacheSet ["database", "key", json]
 cacheFlush ["database", "key"]
 cacheFlushAll
+cacheAsyncFlush ["database", "key"]
+cacheAsyncFlushAll
 cacheRemove ["database", "key"]
 cacheClear
 ```
@@ -158,6 +220,8 @@ and writes during gameplay.
 - `cacheSet` updates only memory.
 - `cacheFlush` writes one cached record to disk and keeps it in memory.
 - `cacheFlushAll` writes all cached records for the active profile.
+- `cacheAsyncFlush` and `cacheAsyncFlushAll` snapshot cached records and flush
+  them on the local DB worker thread.
 - `cacheRemove` removes one record from memory only.
 - `cacheClear` clears all cached records from memory.
 

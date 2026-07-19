@@ -75,6 +75,10 @@ GameValue FunctionUnregister(const GameState* state, GameValuePar oper1);
 GameValue FunctionUnregisterAddon(const GameState* state, GameValuePar oper1);
 GameValue FunctionClear(const GameState* state);
 GameValue FunctionClearAddon(const GameState* state);
+GameValue LocalDbAsyncSave(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncDone(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncResult(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncClear(const GameState* state, GameValuePar oper1);
 extern bool GUseFileBanks;
 
 namespace
@@ -378,6 +382,21 @@ TEST_CASE("VBS-derived functions remain registered in GGameState", "[game][gameS
     REQUIRE(ContainsName(nulars, "functionClear"));
     REQUIRE(ContainsName(nulars, "functionClearAddon"));
     REQUIRE(ContainsName(operators, "spawn"));
+    REQUIRE(ContainsName(functions, "dbAsyncSave"));
+    REQUIRE(ContainsName(functions, "dbAsyncLoad"));
+    REQUIRE(ContainsName(functions, "dbAsyncRemove"));
+    REQUIRE(ContainsName(functions, "dbAsyncExists"));
+    REQUIRE(ContainsName(functions, "dbAsyncList"));
+    REQUIRE(ContainsName(functions, "dbAsyncFind"));
+    REQUIRE(ContainsName(functions, "dbAsyncFindPath"));
+    REQUIRE(ContainsName(functions, "dbAsyncIndex"));
+    REQUIRE(ContainsName(functions, "dbAsyncIndexPath"));
+    REQUIRE(ContainsName(functions, "dbAsyncDone"));
+    REQUIRE(ContainsName(functions, "dbAsyncResult"));
+    REQUIRE(ContainsName(functions, "dbAsyncClear"));
+    REQUIRE(ContainsName(functions, "cacheAsyncFlush"));
+    REQUIRE(ContainsName(nulars, "cacheAsyncFlushAll"));
+    REQUIRE(ContainsName(nulars, "dbAsyncJobs"));
     REQUIRE(ContainsName(functions, "createGuardedPoint"));
     REQUIRE(ContainsName(functions, "deleteWaypoint"));
     REQUIRE(ContainsName(operators, "saveConfig"));

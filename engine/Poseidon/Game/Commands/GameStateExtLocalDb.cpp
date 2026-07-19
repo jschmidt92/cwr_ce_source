@@ -7,9 +7,12 @@
 
 #include <cjson/cJSON.h>
 
+#include <condition_variable>
+#include <deque>
 #include <map>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace
@@ -428,6 +431,489 @@ GameValue LocalDbIndexImpl(const GameState* state, GameValuePar arg, bool path)
     }
     return result;
 }
+
+enum class AsyncLocalDbOp
+{
+    Save,
+    Load,
+    Remove,
+    Exists,
+    List,
+    Find,
+    FindPath,
+    Index,
+    IndexPath,
+    CacheFlush,
+    CacheFlushAll,
+};
+
+enum class AsyncLocalDbStatus
+{
+    Queued,
+    Running,
+    Done,
+};
+
+struct AsyncJsonValue
+{
+    enum class Kind
+    {
+        Empty,
+        String,
+        Number,
+        Bool,
+        Json,
+    };
+
+    Kind kind = Kind::Empty;
+    std::string text;
+    double number = 0.0;
+    bool boolean = false;
+};
+
+struct AsyncIndexBucket
+{
+    AsyncJsonValue value;
+    std::vector<std::string> keys;
+};
+
+struct AsyncLocalDbResult
+{
+    bool ok = false;
+    AsyncJsonValue value;
+    std::vector<std::string> strings;
+    std::vector<AsyncIndexBucket> index;
+};
+
+struct AsyncLocalDbJob
+{
+    int id = 0;
+    AsyncLocalDbOp op = AsyncLocalDbOp::Load;
+    std::string profileDirectory;
+    std::string database;
+    std::string key;
+    std::string json;
+    std::string selector;
+    std::vector<std::string> selectorPath;
+    std::string wanted;
+    std::vector<CacheRecord> cacheRecords;
+};
+
+struct AsyncLocalDbRecord
+{
+    int id = 0;
+    AsyncLocalDbOp op = AsyncLocalDbOp::Load;
+    AsyncLocalDbStatus status = AsyncLocalDbStatus::Queued;
+    AsyncLocalDbResult result;
+};
+
+const char* AsyncLocalDbOpName(AsyncLocalDbOp op)
+{
+    switch (op)
+    {
+        case AsyncLocalDbOp::Save:
+            return "save";
+        case AsyncLocalDbOp::Load:
+            return "load";
+        case AsyncLocalDbOp::Remove:
+            return "remove";
+        case AsyncLocalDbOp::Exists:
+            return "exists";
+        case AsyncLocalDbOp::List:
+            return "list";
+        case AsyncLocalDbOp::Find:
+            return "find";
+        case AsyncLocalDbOp::FindPath:
+            return "findPath";
+        case AsyncLocalDbOp::Index:
+            return "index";
+        case AsyncLocalDbOp::IndexPath:
+            return "indexPath";
+        case AsyncLocalDbOp::CacheFlush:
+            return "cacheFlush";
+        case AsyncLocalDbOp::CacheFlushAll:
+            return "cacheFlushAll";
+    }
+    return "unknown";
+}
+
+const char* AsyncLocalDbStatusName(AsyncLocalDbStatus status)
+{
+    switch (status)
+    {
+        case AsyncLocalDbStatus::Queued:
+            return "queued";
+        case AsyncLocalDbStatus::Running:
+            return "running";
+        case AsyncLocalDbStatus::Done:
+            return "done";
+    }
+    return "unknown";
+}
+
+AsyncJsonValue CaptureJsonValue(const cJSON* item)
+{
+    AsyncJsonValue value;
+    if (!item || cJSON_IsNull(item))
+        return value;
+    if (cJSON_IsString(item))
+    {
+        value.kind = AsyncJsonValue::Kind::String;
+        value.text = item->valuestring ? item->valuestring : "";
+        return value;
+    }
+    if (cJSON_IsNumber(item))
+    {
+        value.kind = AsyncJsonValue::Kind::Number;
+        value.number = item->valuedouble;
+        return value;
+    }
+    if (cJSON_IsBool(item))
+    {
+        value.kind = AsyncJsonValue::Kind::Bool;
+        value.boolean = cJSON_IsTrue(item) != 0;
+        return value;
+    }
+
+    char* printed = cJSON_PrintUnformatted(item);
+    if (printed)
+    {
+        value.kind = AsyncJsonValue::Kind::Json;
+        value.text = printed;
+        cJSON_free(printed);
+    }
+    return value;
+}
+
+GameValue AsyncJsonValueToGameValue(const GameState* state, const AsyncJsonValue& value)
+{
+    switch (value.kind)
+    {
+        case AsyncJsonValue::Kind::String:
+        case AsyncJsonValue::Kind::Json:
+            return GameValue(value.text.c_str());
+        case AsyncJsonValue::Kind::Number:
+            return GameValue(static_cast<float>(value.number));
+        case AsyncJsonValue::Kind::Bool:
+            return GameValue(value.boolean);
+        case AsyncJsonValue::Kind::Empty:
+            return GameValue();
+    }
+    return GameValue();
+}
+
+const cJSON* QueryItemForAsync(const cJSON* root, const AsyncLocalDbJob& job)
+{
+    if (job.op == AsyncLocalDbOp::FindPath || job.op == AsyncLocalDbOp::IndexPath)
+    {
+        const cJSON* current = root;
+        for (const std::string& pathPart : job.selectorPath)
+        {
+            if (!current || !cJSON_IsObject(current))
+                return nullptr;
+            current = cJSON_GetObjectItemCaseSensitive(current, pathPart.c_str());
+        }
+        return current;
+    }
+
+    if (!cJSON_IsObject(root))
+        return nullptr;
+    return cJSON_GetObjectItemCaseSensitive(root, job.selector.c_str());
+}
+
+AsyncLocalDbResult ExecuteAsyncLocalDbJob(const AsyncLocalDbJob& job)
+{
+    AsyncLocalDbResult result;
+    Poseidon::LocalDb::Store store(job.profileDirectory);
+
+    switch (job.op)
+    {
+        case AsyncLocalDbOp::Save:
+            result.ok = store.Save(job.database, job.key, job.json);
+            return result;
+        case AsyncLocalDbOp::Load:
+        {
+            result.ok = store.Load(job.database, job.key, result.value.text);
+            if (result.ok)
+                result.value.kind = AsyncJsonValue::Kind::String;
+            return result;
+        }
+        case AsyncLocalDbOp::Remove:
+            result.ok = store.Remove(job.database, job.key);
+            return result;
+        case AsyncLocalDbOp::Exists:
+            result.ok = true;
+            result.value.kind = AsyncJsonValue::Kind::Bool;
+            result.value.boolean = store.Exists(job.database, job.key);
+            return result;
+        case AsyncLocalDbOp::List:
+            result.strings = store.List(job.database);
+            result.ok = true;
+            return result;
+        case AsyncLocalDbOp::Find:
+        case AsyncLocalDbOp::FindPath:
+            for (const std::string& key : store.List(job.database))
+            {
+                std::string json;
+                if (!store.Load(job.database, key, json))
+                    continue;
+
+                cJSON* root = cJSON_Parse(json.c_str());
+                const std::string actual = JsonComparableKey(QueryItemForAsync(root, job));
+                cJSON_Delete(root);
+                if (!actual.empty() && actual == job.wanted)
+                    result.strings.push_back(key);
+            }
+            result.ok = true;
+            return result;
+        case AsyncLocalDbOp::Index:
+        case AsyncLocalDbOp::IndexPath:
+        {
+            std::map<std::string, AsyncIndexBucket> buckets;
+            for (const std::string& key : store.List(job.database))
+            {
+                std::string json;
+                if (!store.Load(job.database, key, json))
+                    continue;
+
+                cJSON* root = cJSON_Parse(json.c_str());
+                const cJSON* item = QueryItemForAsync(root, job);
+                const std::string bucketKey = JsonComparableKey(item);
+                if (!bucketKey.empty())
+                {
+                    AsyncIndexBucket& bucket = buckets[bucketKey];
+                    if (bucket.keys.empty())
+                        bucket.value = CaptureJsonValue(item);
+                    bucket.keys.push_back(key);
+                }
+                cJSON_Delete(root);
+            }
+            for (auto& entry : buckets)
+                result.index.push_back(entry.second);
+            result.ok = true;
+            return result;
+        }
+        case AsyncLocalDbOp::CacheFlush:
+            result.ok = store.Save(job.database, job.key, job.json);
+            return result;
+        case AsyncLocalDbOp::CacheFlushAll:
+            result.ok = !job.cacheRecords.empty();
+            for (const CacheRecord& record : job.cacheRecords)
+                result.ok = store.Save(record.database, record.key, record.json) && result.ok;
+            return result;
+    }
+
+    return result;
+}
+
+class AsyncLocalDbQueue
+{
+  public:
+    AsyncLocalDbQueue() : m_worker(&AsyncLocalDbQueue::WorkerLoop, this) {}
+
+    ~AsyncLocalDbQueue()
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_stopping = true;
+        }
+        m_condition.notify_one();
+        if (m_worker.joinable())
+            m_worker.join();
+    }
+
+    int Enqueue(AsyncLocalDbJob job)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        job.id = m_nextId++;
+        AsyncLocalDbRecord record;
+        record.id = job.id;
+        record.op = job.op;
+        m_records[job.id] = record;
+        m_jobs.push_back(job);
+        m_condition.notify_one();
+        return job.id;
+    }
+
+    bool Get(int id, AsyncLocalDbRecord& record) const
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const auto found = m_records.find(id);
+        if (found == m_records.end())
+            return false;
+        record = found->second;
+        return true;
+    }
+
+    std::vector<AsyncLocalDbRecord> List() const
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<AsyncLocalDbRecord> records;
+        for (const auto& entry : m_records)
+            records.push_back(entry.second);
+        return records;
+    }
+
+    bool Clear(int id)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const auto found = m_records.find(id);
+        if (found == m_records.end() || found->second.status != AsyncLocalDbStatus::Done)
+            return false;
+        m_records.erase(found);
+        return true;
+    }
+
+  private:
+    void WorkerLoop()
+    {
+        while (true)
+        {
+            AsyncLocalDbJob job;
+            {
+                std::unique_lock<std::mutex> lock(m_mutex);
+                m_condition.wait(lock, [&]() { return m_stopping || !m_jobs.empty(); });
+                if (m_stopping && m_jobs.empty())
+                    return;
+                job = m_jobs.front();
+                m_jobs.pop_front();
+                m_records[job.id].status = AsyncLocalDbStatus::Running;
+            }
+
+            AsyncLocalDbResult result = ExecuteAsyncLocalDbJob(job);
+
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                AsyncLocalDbRecord& record = m_records[job.id];
+                record.status = AsyncLocalDbStatus::Done;
+                record.result = result;
+            }
+        }
+    }
+
+    mutable std::mutex m_mutex;
+    std::condition_variable m_condition;
+    std::deque<AsyncLocalDbJob> m_jobs;
+    std::map<int, AsyncLocalDbRecord> m_records;
+    std::thread m_worker;
+    int m_nextId = 1;
+    bool m_stopping = false;
+};
+
+AsyncLocalDbQueue& LocalDbAsyncQueue()
+{
+    static AsyncLocalDbQueue queue;
+    return queue;
+}
+
+GameValue AsyncLocalDbResultValue(const GameState* state, const AsyncLocalDbRecord& record)
+{
+    GameValue value = state->CreateGameValue(GameArray);
+    GameArrayType& array = value;
+    array.Resize(4);
+    array[0] = GameValue(static_cast<float>(record.id));
+    array[1] = GameValue(AsyncLocalDbStatusName(record.status));
+    array[2] = GameValue(record.result.ok);
+
+    if (record.op == AsyncLocalDbOp::Find || record.op == AsyncLocalDbOp::FindPath ||
+        record.op == AsyncLocalDbOp::List)
+    {
+        array[3] = StringArrayValue(state, record.result.strings);
+    }
+    else if (record.op == AsyncLocalDbOp::Index || record.op == AsyncLocalDbOp::IndexPath)
+    {
+        GameValue indexValue = state->CreateGameValue(GameArray);
+        GameArrayType& indexArray = indexValue;
+        for (const AsyncIndexBucket& bucket : record.result.index)
+        {
+            GameValue pair = state->CreateGameValue(GameArray);
+            GameArrayType& pairArray = pair;
+            pairArray.Resize(2);
+            pairArray[0] = AsyncJsonValueToGameValue(state, bucket.value);
+            pairArray[1] = StringArrayValue(state, bucket.keys);
+            indexArray.Add(pair);
+        }
+        array[3] = indexValue;
+    }
+    else
+    {
+        array[3] = AsyncJsonValueToGameValue(state, record.result.value);
+    }
+    return value;
+}
+
+GameValue AsyncLocalDbJobInfoValue(const GameState* state, const AsyncLocalDbRecord& record)
+{
+    GameValue value = state->CreateGameValue(GameArray);
+    GameArrayType& array = value;
+    array.Resize(4);
+    array[0] = GameValue(static_cast<float>(record.id));
+    array[1] = GameValue(AsyncLocalDbOpName(record.op));
+    array[2] = GameValue(AsyncLocalDbStatusName(record.status));
+    array[3] = GameValue(record.status == AsyncLocalDbStatus::Done ? record.result.ok : false);
+    return value;
+}
+
+bool FillAsyncDatabaseKeyJob(const GameState* state, GameValuePar arg, int size, AsyncLocalDbOp op,
+                             AsyncLocalDbJob& job)
+{
+    if (!CheckLocalDbArrayArg(state, arg, size))
+        return false;
+
+    const GameArrayType& array = arg;
+    job.op = op;
+    job.profileDirectory = ActiveLocalDbProfileDirectory();
+    job.database = GameStringToStdString(array[0]);
+    job.key = GameStringToStdString(array[1]);
+    if (size == 3)
+        job.json = GameStringToStdString(array[2]);
+    return true;
+}
+
+bool FillAsyncFindJob(const GameState* state, GameValuePar arg, bool path, AsyncLocalDbJob& job)
+{
+    if (!CheckLocalDbFindArg(state, arg, path))
+        return false;
+
+    const GameArrayType& array = arg;
+    job.op = path ? AsyncLocalDbOp::FindPath : AsyncLocalDbOp::Find;
+    job.profileDirectory = ActiveLocalDbProfileDirectory();
+    job.database = GameStringToStdString(array[0]);
+    job.wanted = ComparableKeyForGameValue(array[2]);
+    if (path)
+    {
+        const GameArrayType& pathArray = array[1];
+        for (int i = 0; i < pathArray.Size(); ++i)
+            job.selectorPath.push_back(GameStringToStdString(pathArray[i]));
+    }
+    else
+    {
+        job.selector = GameStringToStdString(array[1]);
+    }
+    return true;
+}
+
+bool FillAsyncIndexJob(const GameState* state, GameValuePar arg, bool path, AsyncLocalDbJob& job)
+{
+    if (!CheckLocalDbIndexArg(state, arg, path))
+        return false;
+
+    const GameArrayType& array = arg;
+    job.op = path ? AsyncLocalDbOp::IndexPath : AsyncLocalDbOp::Index;
+    job.profileDirectory = ActiveLocalDbProfileDirectory();
+    job.database = GameStringToStdString(array[0]);
+    if (path)
+    {
+        const GameArrayType& pathArray = array[1];
+        for (int i = 0; i < pathArray.Size(); ++i)
+            job.selectorPath.push_back(GameStringToStdString(pathArray[i]));
+    }
+    else
+    {
+        job.selector = GameStringToStdString(array[1]);
+    }
+    return true;
+}
 } // namespace
 
 GameValue LocalDbRoot(const GameState* /*state*/)
@@ -679,4 +1165,178 @@ GameValue LocalDbCacheClear(const GameState* /*state*/)
 
     LocalDbCache().clear();
     return GameValue(true);
+}
+
+GameValue LocalDbAsyncSave(const GameState* state, GameValuePar arg)
+{
+    AsyncLocalDbJob job;
+    if (!FillAsyncDatabaseKeyJob(state, arg, 3, AsyncLocalDbOp::Save, job))
+        return GameValue(-1.0f);
+    return GameValue(static_cast<float>(LocalDbAsyncQueue().Enqueue(job)));
+}
+
+GameValue LocalDbAsyncLoad(const GameState* state, GameValuePar arg)
+{
+    AsyncLocalDbJob job;
+    if (!FillAsyncDatabaseKeyJob(state, arg, 2, AsyncLocalDbOp::Load, job))
+        return GameValue(-1.0f);
+    return GameValue(static_cast<float>(LocalDbAsyncQueue().Enqueue(job)));
+}
+
+GameValue LocalDbAsyncRemove(const GameState* state, GameValuePar arg)
+{
+    AsyncLocalDbJob job;
+    if (!FillAsyncDatabaseKeyJob(state, arg, 2, AsyncLocalDbOp::Remove, job))
+        return GameValue(-1.0f);
+
+    {
+        std::lock_guard<std::recursive_mutex> lock(LocalDbMutex());
+        Poseidon::LocalDb::Store store(job.profileDirectory);
+        LocalDbCache().erase(CacheKey(store, job.database, job.key));
+    }
+    return GameValue(static_cast<float>(LocalDbAsyncQueue().Enqueue(job)));
+}
+
+GameValue LocalDbAsyncExists(const GameState* state, GameValuePar arg)
+{
+    AsyncLocalDbJob job;
+    if (!FillAsyncDatabaseKeyJob(state, arg, 2, AsyncLocalDbOp::Exists, job))
+        return GameValue(-1.0f);
+    return GameValue(static_cast<float>(LocalDbAsyncQueue().Enqueue(job)));
+}
+
+GameValue LocalDbAsyncList(const GameState* state, GameValuePar arg)
+{
+    if (arg.GetType() != GameString)
+    {
+        state->TypeError(GameString, arg.GetType());
+        return GameValue(-1.0f);
+    }
+
+    AsyncLocalDbJob job;
+    job.op = AsyncLocalDbOp::List;
+    job.profileDirectory = ActiveLocalDbProfileDirectory();
+    job.database = GameStringToStdString(arg);
+    return GameValue(static_cast<float>(LocalDbAsyncQueue().Enqueue(job)));
+}
+
+GameValue LocalDbAsyncFind(const GameState* state, GameValuePar arg)
+{
+    AsyncLocalDbJob job;
+    if (!FillAsyncFindJob(state, arg, false, job))
+        return GameValue(-1.0f);
+    return GameValue(static_cast<float>(LocalDbAsyncQueue().Enqueue(job)));
+}
+
+GameValue LocalDbAsyncFindPath(const GameState* state, GameValuePar arg)
+{
+    AsyncLocalDbJob job;
+    if (!FillAsyncFindJob(state, arg, true, job))
+        return GameValue(-1.0f);
+    return GameValue(static_cast<float>(LocalDbAsyncQueue().Enqueue(job)));
+}
+
+GameValue LocalDbAsyncIndex(const GameState* state, GameValuePar arg)
+{
+    AsyncLocalDbJob job;
+    if (!FillAsyncIndexJob(state, arg, false, job))
+        return GameValue(-1.0f);
+    return GameValue(static_cast<float>(LocalDbAsyncQueue().Enqueue(job)));
+}
+
+GameValue LocalDbAsyncIndexPath(const GameState* state, GameValuePar arg)
+{
+    AsyncLocalDbJob job;
+    if (!FillAsyncIndexJob(state, arg, true, job))
+        return GameValue(-1.0f);
+    return GameValue(static_cast<float>(LocalDbAsyncQueue().Enqueue(job)));
+}
+
+GameValue LocalDbCacheAsyncFlush(const GameState* state, GameValuePar arg)
+{
+    if (!CheckLocalDbArrayArg(state, arg, 2))
+        return GameValue(-1.0f);
+
+    const GameArrayType& array = arg;
+    AsyncLocalDbJob job;
+    job.op = AsyncLocalDbOp::CacheFlush;
+    job.profileDirectory = ActiveLocalDbProfileDirectory();
+    job.database = GameStringToStdString(array[0]);
+    job.key = GameStringToStdString(array[1]);
+
+    {
+        std::lock_guard<std::recursive_mutex> lock(LocalDbMutex());
+        Poseidon::LocalDb::Store store(job.profileDirectory);
+        const auto found = LocalDbCache().find(CacheKey(store, job.database, job.key));
+        if (found == LocalDbCache().end())
+            return GameValue(-1.0f);
+        job.json = found->second.json;
+    }
+
+    return GameValue(static_cast<float>(LocalDbAsyncQueue().Enqueue(job)));
+}
+
+GameValue LocalDbCacheAsyncFlushAll(const GameState* /*state*/)
+{
+    AsyncLocalDbJob job;
+    job.op = AsyncLocalDbOp::CacheFlushAll;
+    job.profileDirectory = ActiveLocalDbProfileDirectory();
+
+    {
+        std::lock_guard<std::recursive_mutex> lock(LocalDbMutex());
+        Poseidon::LocalDb::Store store(job.profileDirectory);
+        for (const auto& entry : LocalDbCache())
+        {
+            if (entry.second.root == store.Root())
+                job.cacheRecords.push_back(entry.second);
+        }
+    }
+
+    if (job.cacheRecords.empty())
+        return GameValue(-1.0f);
+    return GameValue(static_cast<float>(LocalDbAsyncQueue().Enqueue(job)));
+}
+
+GameValue LocalDbAsyncDone(const GameState* /*state*/, GameValuePar arg)
+{
+    if (arg.GetType() != GameScalar)
+        return GameValue(false);
+
+    AsyncLocalDbRecord record;
+    if (!LocalDbAsyncQueue().Get(static_cast<int>(static_cast<GameScalarType>(arg)), record))
+        return GameValue(false);
+    return GameValue(record.status == AsyncLocalDbStatus::Done);
+}
+
+GameValue LocalDbAsyncResult(const GameState* state, GameValuePar arg)
+{
+    if (arg.GetType() != GameScalar)
+    {
+        state->TypeError(GameScalar, arg.GetType());
+        return state->CreateGameValue(GameArray);
+    }
+
+    AsyncLocalDbRecord record;
+    if (!LocalDbAsyncQueue().Get(static_cast<int>(static_cast<GameScalarType>(arg)), record))
+        return state->CreateGameValue(GameArray);
+    return AsyncLocalDbResultValue(state, record);
+}
+
+GameValue LocalDbAsyncJobs(const GameState* state)
+{
+    GameValue value = state->CreateGameValue(GameArray);
+    GameArrayType& array = value;
+    for (const AsyncLocalDbRecord& record : LocalDbAsyncQueue().List())
+        array.Add(AsyncLocalDbJobInfoValue(state, record));
+    return value;
+}
+
+GameValue LocalDbAsyncClear(const GameState* state, GameValuePar arg)
+{
+    if (arg.GetType() != GameScalar)
+    {
+        state->TypeError(GameScalar, arg.GetType());
+        return GameValue(false);
+    }
+    return GameValue(LocalDbAsyncQueue().Clear(static_cast<int>(static_cast<GameScalarType>(arg))));
 }
