@@ -70,6 +70,8 @@ namespace Poseidon
 
 void ShowCinemaBorder(bool show);
 void ClearScriptEventHandlers();
+void ClearMissionPhaseHandlers();
+int RunMissionPhase(const char* phase, const class ::GameValue& argument);
 
 int GetNetworkPort();
 RString GetNetworkPassword();
@@ -156,6 +158,8 @@ void CopyDirectoryStructure(const char* dst, const char* src)
 void RunInitScript()
 {
     Poseidon::ClearScriptEventHandlers();
+    Poseidon::ClearMissionPhaseHandlers();
+    Poseidon::RunMissionPhase("preInit", GameValue());
 
     RString initScript = GetMissionDirectory() + RString("init.sqs");
     if (QIFStreamB::FileExist(initScript))
@@ -179,6 +183,9 @@ void RunInitScript()
                 gs->Execute((const char*)code);
         }
     }
+
+    Poseidon::RunMissionPhase("init", GameValue());
+    Poseidon::RunMissionPhase("postInit", GameValue());
 }
 
 void RunMissionScript(const char* filename, GameValue argument)

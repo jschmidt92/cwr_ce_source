@@ -84,6 +84,7 @@ using namespace Poseidon;
 namespace Poseidon
 {
 void RunMissionScript(char const*, class ::GameValue);
+int RunMissionPhase(const char* phase, const class ::GameValue& argument);
 RString GetUserDirectory();
 RString GetUserParams();
 // Cumulative count of NMTPlaySound messages this client has received. Test
@@ -1921,8 +1922,11 @@ void NetworkClient::OnMessage(int from, NetworkMessage* msg, NetworkMessageType 
                         if (_jip)
                         {
                             void RunMissionScript(const char* filename, GameValue argument);
+                            Poseidon::RunMissionPhase("playerLocalInit", GameValue());
                             Poseidon::RunMissionScript("initPlayerLocal.sqs", GameValue());
+                            Poseidon::RunMissionPhase("jipInit", GameValue());
                             Poseidon::RunMissionScript("initJIP.sqs", GameValue());
+                            Poseidon::RunMissionPhase("playerLocalPostInit", GameValue());
                         }
 
                         // number of bodies we want to hide in mission

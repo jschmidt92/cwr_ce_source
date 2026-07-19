@@ -39,6 +39,7 @@ std::string BuildMPReportPathForUserDir(const std::string& userDir, const std::t
 bool DefaultAdvancedEditorMode();
 bool LoadAdvancedEditorModeFromUserParams(const char* userParamsPath);
 void ClearScriptEventHandlers();
+void ClearMissionPhaseHandlers();
 } // namespace Poseidon
 
 namespace Poseidon
@@ -61,6 +62,10 @@ GameValue EventOn(const GameState* state, GameValuePar oper1);
 GameValue EventGet(const GameState* state, GameValuePar oper1);
 GameValue EventList(const GameState* state);
 GameValue EventOff(const GameState* state, GameValuePar oper1);
+GameValue MissionPhaseOn(const GameState* state, GameValuePar oper1);
+GameValue MissionPhaseOff(const GameState* state, GameValuePar oper1);
+GameValue MissionPhaseClear(const GameState* state, GameValuePar oper1);
+GameValue MissionPhaseList(const GameState* state);
 extern bool GUseFileBanks;
 
 namespace
@@ -350,6 +355,10 @@ TEST_CASE("VBS-derived functions remain registered in GGameState", "[game][gameS
     REQUIRE(ContainsName(functions, "eventEmitGlobal"));
     REQUIRE(ContainsName(functions, "eventEmitServer"));
     REQUIRE(ContainsName(functions, "eventEmitTarget"));
+    REQUIRE(ContainsName(functions, "missionPhaseOn"));
+    REQUIRE(ContainsName(nulars, "missionPhaseList"));
+    REQUIRE(ContainsName(functions, "missionPhaseOff"));
+    REQUIRE(ContainsName(functions, "missionPhaseClear"));
     REQUIRE(ContainsName(functions, "createGuardedPoint"));
     REQUIRE(ContainsName(functions, "deleteWaypoint"));
     REQUIRE(ContainsName(operators, "saveConfig"));
@@ -400,6 +409,43 @@ TEST_CASE("script event handlers can be inspected by id and listed", "[game][gam
     REQUIRE(emptyList.Size() == 0);
 
     Poseidon::ClearScriptEventHandlers();
+}
+
+TEST_CASE("mission phase handlers can be listed, removed, and cleared", "[game][gameStateExt][missionPhase]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+    Poseidon::ClearMissionPhaseHandlers();
+
+    GameValue registration = GGameState.CreateGameValue(GameArray);
+    GameArrayType& args = registration;
+    args.Resize(2);
+    args[0] = GameValue("postInit");
+    args[1] = GameValue("scripts\\post_init.sqf");
+
+    GameValue idValue = MissionPhaseOn(&GGameState, registration);
+    REQUIRE(static_cast<GameScalarType>(idValue) == 1.0f);
+
+    GameValue listValue = MissionPhaseList(&GGameState);
+    const GameArrayType& list = listValue;
+    REQUIRE(list.Size() == 1);
+    const GameArrayType& info = list[0];
+    REQUIRE(info.Size() == 4);
+    REQUIRE(static_cast<GameScalarType>(info[0]) == 1.0f);
+    REQUIRE(strcmp(((GameStringType)info[1]).Data(), "postInit") == 0);
+    REQUIRE(strcmp(((GameStringType)info[2]).Data(), "script") == 0);
+    REQUIRE(strcmp(((GameStringType)info[3]).Data(), "scripts\\post_init.sqf") == 0);
+
+    REQUIRE((bool)MissionPhaseOff(&GGameState, idValue));
+    GameValue emptyListValue = MissionPhaseList(&GGameState);
+    REQUIRE(((const GameArrayType&)emptyListValue).Size() == 0);
+
+    args[0] = GameValue("serverInit");
+    args[1] = GameValue("scripts\\server_init.sqf");
+    REQUIRE(static_cast<GameScalarType>(MissionPhaseOn(&GGameState, registration)) == 2.0f);
+    REQUIRE(static_cast<GameScalarType>(MissionPhaseClear(&GGameState, GameValue("serverInit"))) == 1.0f);
+
+    Poseidon::ClearMissionPhaseHandlers();
 }
 
 TEST_CASE("XOR1024 encryption registers and round-trips data", "[game][gameStateExt][encryption]")

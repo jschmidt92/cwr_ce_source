@@ -54,3 +54,8 @@ Returns `"HEALTHY"`, `"INJURED"`, `"UNCONSCIOUS"`, or `"DEAD"`.
 
 See [event-system.md](event-system.md) for `eventOn`, `eventGet`, `eventList`,
 `eventOff`, `eventClear`, and the domain-specific event emitters.
+
+## Mission Lifecycle
+
+See [mission-lifecycle.md](mission-lifecycle.md) for `missionPhaseOn`,
+`missionPhaseOff`, `missionPhaseClear`, and `missionPhaseList`.

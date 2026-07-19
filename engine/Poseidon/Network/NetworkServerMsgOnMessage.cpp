@@ -82,6 +82,7 @@ using Poseidon::Foundation::MemAllocSA;
 namespace Poseidon
 {
 void RunMissionScript(char const*, class ::GameValue);
+int RunMissionPhase(const char* phase, const class ::GameValue& argument);
 }
 
 #define LOG_SEND_PROCESS 0
@@ -1781,6 +1782,7 @@ void NetworkServer::OnGameStateMessage(int from, NetworkMessage* msg, NetworkMes
 
                     // Run initPlayerServer.sqs on server for JIP player
                     using Poseidon::RunMissionScript;
+                    Poseidon::RunMissionPhase("playerServerInit", GameValue());
                     RunMissionScript("initPlayerServer.sqs", GameValue());
                 }
             }

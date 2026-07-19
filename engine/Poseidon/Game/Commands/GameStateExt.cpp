@@ -643,6 +643,10 @@ GameValue EventEmitGlobal(const GameState* state, GameValuePar oper1);
 GameValue EventEmitServer(const GameState* state, GameValuePar oper1);
 GameValue EventEmitTarget(const GameState* state, GameValuePar oper1);
 GameValue EventReceive(const GameState* state, GameValuePar oper1);
+GameValue MissionPhaseOn(const GameState* state, GameValuePar oper1);
+GameValue MissionPhaseOff(const GameState* state, GameValuePar oper1);
+GameValue MissionPhaseClear(const GameState* state, GameValuePar oper1);
+GameValue MissionPhaseList(const GameState* state);
 GameValue PublicExec(const GameState* state, GameValuePar oper1);
 GameValue RemoteExec(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue RemoteExecCall(const GameState* state, GameValuePar oper1, GameValuePar oper2);
@@ -965,6 +969,7 @@ static const GameNular* GetExtNular(int& count)
         GameNular(GameBool, "isServer", IsServer),
         GameNular(GameBool, "isJIP", IsJIP),
         GameNular(GameArray, "eventList", EventList),
+        GameNular(GameArray, "missionPhaseList", MissionPhaseList),
         GameNular(GameNothing, "serverPause", ServerPause),
         GameNular(GameNothing, "serverResume", ServerResume),
         GameNular(GameBool, "cacheClear", LocalDbCacheClear),
@@ -1109,6 +1114,9 @@ static const GameFunction* GetExtUnary(int& count)
         GameFunction(GameBool, "eventEmitServer", EventEmitServer, GameArray),
         GameFunction(GameBool, "eventEmitTarget", EventEmitTarget, GameArray),
         GameFunction(GameScalar, "eventReceive", EventReceive, GameArray),
+        GameFunction(GameScalar, "missionPhaseOn", MissionPhaseOn, GameArray),
+        GameFunction(GameBool, "missionPhaseOff", MissionPhaseOff, GameScalar),
+        GameFunction(GameScalar, "missionPhaseClear", MissionPhaseClear, GameString),
         GameFunction(GameNothing, "publicVariable", PublicVariable, GameString),
         GameFunction(GameNothing, "saveMission", SaveMission, GameString),
         GameFunction(GameNothing, "publicVariableArray", PublicVariable, GameString),

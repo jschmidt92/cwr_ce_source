@@ -30,6 +30,7 @@
 
 namespace Poseidon
 {
+int RunMissionPhase(const char* phase, const class ::GameValue& argument);
 
 // Parse --mp-assign "SIDE:SLOT" into TargetSide and 1-based slot number
 // Returns true on success, false on invalid format
@@ -1502,9 +1503,13 @@ void DisplayMultiplayerSetup::OnSimulate(EntityAI* vehicle)
                         void RunMissionScript(const char* filename, GameValue argument);
                         if (GetNetworkManager().IsServer())
                         {
+                            RunMissionPhase("serverInit", GameValue());
                             RunMissionScript("initServer.sqs", GameValue());
+                            RunMissionPhase("serverPostInit", GameValue());
                         }
+                        RunMissionPhase("playerLocalInit", GameValue());
                         RunMissionScript("initPlayerLocal.sqs", GameValue());
+                        RunMissionPhase("playerLocalPostInit", GameValue());
                     }
                     CreateChild(new DisplayServerGetReady(this));
                     return;
