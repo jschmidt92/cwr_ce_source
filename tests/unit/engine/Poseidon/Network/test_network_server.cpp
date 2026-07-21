@@ -6,6 +6,7 @@
 #include <Poseidon/Core/ModSystem.hpp>
 #include <Poseidon/Network/NetworkImpl.hpp>
 #include <Poseidon/Network/NetworkMissionTransfer.hpp>
+#include <Poseidon/Network/NetworkServerAuth.hpp>
 #include <Poseidon/Network/NetworkServerCommon.hpp>
 #include <Poseidon/Network/NetworkSoundReplication.hpp>
 #include <Poseidon/IO/Streams/QBStream.hpp>
@@ -23,6 +24,8 @@
 #include <Poseidon/Foundation/Containers/Array.hpp>
 #include <Poseidon/Foundation/Strings/RString.hpp>
 #include <Poseidon/Foundation/Types/Pointers.hpp>
+
+void DestroyMsgFormats();
 
 namespace
 {
@@ -56,6 +59,19 @@ class TestNetworkComponent : public NetworkComponent
   protected:
     void EnqueueMsg(int, NetworkMessage*, NetworkMessageType) override {}
     void EnqueueMsgNonGuaranteed(int, NetworkMessage*, NetworkMessageType) override {}
+};
+
+class TestFormatNetworkComponent : public TestNetworkComponent
+{
+  public:
+    NetworkMessageFormatBase* GetFormat(int type) override
+    {
+        if (type < 0 || type >= NMTN)
+        {
+            return nullptr;
+        }
+        return GMsgFormats[type];
+    }
 };
 
 class TestWave : public Poseidon::WaveDummy
@@ -500,6 +516,24 @@ Poseidon::NetworkRemoteExecDispatchResult DispatchRemoteExecSelectorForTest(
             return 0;
         });
 }
+
+RemoteExecMessage MakeServerRemoteExecMessageForTest(RString name, const AutoArray<char>& params, int target,
+                                                     const AutoArray<char>& targetSpec, bool jip, RString jipKey,
+                                                     bool callMode)
+{
+    RemoteExecMessage msg;
+    msg._name = name;
+    msg._params = params;
+    msg._target = target;
+    msg._targetSpec = targetSpec;
+    msg._jip = jip;
+    msg._jipKey = jipKey;
+    msg._callMode = callMode;
+    msg._originator = AI_PLAYER;
+    msg._sequence = 1;
+    msg._remove = false;
+    return msg;
+}
 } // namespace
 
 TEST_CASE("remoteExec target resolver -- target 0 includes server and eligible clients",
@@ -666,6 +700,143 @@ TEST_CASE("remoteExec target resolver -- array selector flattens and deduplicate
     REQUIRE(result.acceptedClientTarget);
     REQUIRE(result.sentToClient);
     REQUIRE(sent == std::vector<int>{10, 12});
+}
+
+TEST_CASE("network message formats can be destroyed and reinitialized without duplicate fields", "[network][formats]")
+{
+    InitMsgFormats();
+    REQUIRE(GMsgFormats[NMTRemoteExec] != nullptr);
+    const int firstCount = GMsgFormats[NMTRemoteExec]->NItems();
+    REQUIRE(firstCount > 0);
+
+    DestroyMsgFormats();
+    InitMsgFormats();
+    REQUIRE(GMsgFormats[NMTRemoteExec] != nullptr);
+    REQUIRE(GMsgFormats[NMTRemoteExec]->NItems() == firstCount);
+
+    DestroyMsgFormats();
+    InitMsgFormats();
+    REQUIRE(GMsgFormats[NMTRemoteExec] != nullptr);
+    REQUIRE(GMsgFormats[NMTRemoteExec]->NItems() == firstCount);
+}
+
+TEST_CASE("remoteExec target resolver -- accepted but not ready client is not sent immediately",
+          "[network][remoteExec][target][server]")
+{
+    const RemoteExecDispatchFixture fixture{{12}, {1}};
+    std::vector<int> sent;
+    bool executedOnServer = false;
+
+    Poseidon::NetworkRemoteExecDispatchResult result =
+        DispatchRemoteExecTargetForTest(12, fixture, sent, executedOnServer);
+
+    REQUIRE_FALSE(executedOnServer);
+    REQUIRE_FALSE(result.executedOnServer);
+    REQUIRE(result.acceptedClientTarget);
+    REQUIRE_FALSE(result.sentToClient);
+    REQUIRE(sent.empty());
+}
+
+TEST_CASE("remoteExec target resolver -- mixed selector can execute server and send client once",
+          "[network][remoteExec][target][server]")
+{
+    const RemoteExecDispatchFixture fixture{{10, 11}, {2, 2}};
+    Poseidon::RemoteExecTargetSelector client;
+    client.kind = Poseidon::RemoteExecTargetKind::Scalar;
+    client.scalar = 10;
+    Poseidon::RemoteExecTargetSelector serverOwned;
+    serverOwned.kind = Poseidon::RemoteExecTargetKind::Object;
+    serverOwned.id = NetworkId(7, 42);
+    Poseidon::RemoteExecTargetSelector duplicateClient;
+    duplicateClient.kind = Poseidon::RemoteExecTargetKind::Scalar;
+    duplicateClient.scalar = 10;
+    Poseidon::RemoteExecTargetSelector selector;
+    selector.kind = Poseidon::RemoteExecTargetKind::Array;
+    selector.items.Add(client);
+    selector.items.Add(serverOwned);
+    selector.items.Add(duplicateClient);
+    std::vector<int> sent;
+    bool executedOnServer = false;
+
+    Poseidon::NetworkRemoteExecDispatchResult result =
+        DispatchRemoteExecSelectorForTest(selector, fixture, {{NetworkId(7, 42), AI_PLAYER}}, sent, executedOnServer);
+
+    REQUIRE(executedOnServer);
+    REQUIRE(result.executedOnServer);
+    REQUIRE(result.acceptedClientTarget);
+    REQUIRE(result.sentToClient);
+    REQUIRE(sent == std::vector<int>{10});
+}
+
+TEST_CASE("remoteExec message round-trips server-originated fields for JIP storage",
+          "[network][remoteExec][server][jip]")
+{
+    InitMsgFormats();
+    REQUIRE(GMsgFormats[NMTRemoteExec] != nullptr);
+    TestFormatNetworkComponent component;
+
+    AutoArray<char> params;
+    params.Add('a');
+    params.Add('b');
+    Poseidon::RemoteExecTargetSelector selector;
+    selector.kind = Poseidon::RemoteExecTargetKind::Scalar;
+    selector.scalar = 42;
+    AutoArray<char> targetSpec;
+    REQUIRE(Poseidon::EncodeRemoteExecTargetSelector(targetSpec, selector));
+
+    RemoteExecMessage sent =
+        MakeServerRemoteExecMessageForTest(RString("eventReceive"), params, 42, targetSpec, true, RString("state"), false);
+    NetworkMessage stored;
+    stored.time = Glob.time;
+    NetworkMessageContext sendCtx(&stored, GMsgFormats[NMTRemoteExec], &component, TO_SERVER, MSG_SEND);
+    REQUIRE(sent.TransferMsg(sendCtx) == TMOK);
+
+    RemoteExecMessage decoded;
+    NetworkMessageContext receiveCtx(&stored, GMsgFormats[NMTRemoteExec], &component, TO_SERVER, MSG_RECEIVE);
+    REQUIRE(decoded.TransferMsg(receiveCtx) == TMOK);
+
+    REQUIRE(decoded._name == RString("eventReceive"));
+    REQUIRE(decoded._target == 42);
+    REQUIRE(decoded._jip);
+    REQUIRE(decoded._jipKey == RString("state"));
+    REQUIRE_FALSE(decoded._callMode);
+    REQUIRE(decoded._originator == AI_PLAYER);
+    REQUIRE(decoded._sequence == 1);
+    REQUIRE_FALSE(decoded._remove);
+    REQUIRE(decoded._params.Size() == 2);
+    REQUIRE(decoded._params[0] == 'a');
+    REQUIRE(decoded._params[1] == 'b');
+
+    Poseidon::RemoteExecTargetSelector decodedSelector;
+    REQUIRE(Poseidon::DecodeRemoteExecTargetSelector(decodedSelector, decoded._targetSpec));
+    REQUIRE(decodedSelector.kind == Poseidon::RemoteExecTargetKind::Scalar);
+    REQUIRE(decodedSelector.scalar == 42);
+}
+
+TEST_CASE("remoteExec policy allows internal event transport without opening arbitrary calls",
+          "[network][remoteExec][events]")
+{
+    AutoArray<RString> allowed;
+    const int noGameMaster = AI_PLAYER;
+    const int from = 12;
+    const int gameMaster = 99;
+    const int botClient = 100;
+
+    REQUIRE(Poseidon::RemoteExecInternalNameAllowed(RString("eventReceive")));
+    REQUIRE(Poseidon::RemoteExecInternalNameAllowed(RString("EVENTRECEIVE")));
+    REQUIRE_FALSE(Poseidon::RemoteExecInternalNameAllowed(RString("hint")));
+
+    REQUIRE(Poseidon::RemoteExecClientAuthorized(from, gameMaster, botClient, noGameMaster,
+                                                 Poseidon::RemoteExecPolicyMode::DenyClient, allowed,
+                                                 RString("eventReceive")));
+    REQUIRE_FALSE(Poseidon::RemoteExecClientAuthorized(from, gameMaster, botClient, noGameMaster,
+                                                       Poseidon::RemoteExecPolicyMode::DenyClient, allowed,
+                                                       RString("hint")));
+
+    allowed.Add(RString("hint"));
+    REQUIRE(Poseidon::RemoteExecClientAuthorized(from, gameMaster, botClient, noGameMaster,
+                                                 Poseidon::RemoteExecPolicyMode::AllowListed, allowed,
+                                                 RString("hint")));
 }
 
 TEST_CASE("remoteExec target resolver -- JIP replay re-resolves object owner", "[network][remoteExec][target]")

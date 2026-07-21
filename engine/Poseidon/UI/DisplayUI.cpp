@@ -156,6 +156,45 @@ void CopyDirectoryStructure(const char* dst, const char* src)
         _findclose(h);
     }
 }
+namespace
+{
+bool HasExtension(RString filename, const char* extension)
+{
+    const char* text = filename;
+    const char* dot = strrchr(text, '.');
+    return dot && stricmp(dot, extension) == 0;
+}
+
+void ExecuteMissionSqf(const char* filename, GameValue argument)
+{
+    RString scriptPath = GetMissionDirectory() + RString(filename);
+    if (!QIFStreamB::FileExist(scriptPath))
+    {
+        return;
+    }
+
+    QIFStreamB in;
+    in.AutoOpen(scriptPath);
+    if (in.fail() || in.rest() <= 0)
+    {
+        return;
+    }
+
+    RString code(in.act(), in.rest());
+    GameState* gs = GWorld ? GWorld->GetGameState() : nullptr;
+    if (!gs)
+    {
+        return;
+    }
+
+    GameVarSpace local(gs->GetContext());
+    gs->BeginContext(&local);
+    gs->VarSetLocal("_this", argument, true);
+    gs->Execute((const char*)code);
+    gs->EndContext();
+}
+} // namespace
+
 void RunInitScript()
 {
     Poseidon::ClearScriptEventHandlers();
@@ -172,19 +211,7 @@ void RunInitScript()
     }
 
     // Also run init.sqf if present (SQF format, unscheduled execution)
-    RString initSqf = GetMissionDirectory() + RString("init.sqf");
-    if (QIFStreamB::FileExist(initSqf))
-    {
-        QIFStreamB in;
-        in.AutoOpen(initSqf);
-        if (!in.fail() && in.rest() > 0)
-        {
-            RString code(in.act(), in.rest());
-            GameState* gs = GWorld->GetGameState();
-            if (gs)
-                gs->Execute((const char*)code);
-        }
-    }
+    ExecuteMissionSqf("init.sqf", GameValue());
 
     Poseidon::RunMissionPhase("init", GameValue());
     Poseidon::RunMissionPhase("postInit", GameValue());
@@ -192,6 +219,12 @@ void RunInitScript()
 
 void RunMissionScript(const char* filename, GameValue argument)
 {
+    if (HasExtension(filename, ".sqf"))
+    {
+        ExecuteMissionSqf(filename, argument);
+        return;
+    }
+
     RString scriptPath = GetMissionDirectory() + RString(filename);
     if (QIFStreamB::FileExist(scriptPath))
     {

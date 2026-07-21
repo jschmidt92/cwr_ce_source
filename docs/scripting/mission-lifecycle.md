@@ -71,6 +71,18 @@ Multiplayer role phases:
 - `playerServerInit`: before `initPlayerServer.sqs` for a JIP player.
 - `jipInit`: before `initJIP.sqs` on a joining client.
 
+The multiplayer init files support both legacy `.sqs` and SQF `.sqf` variants.
+When both exist for the same hook, Poseidon runs the legacy `.sqs` file first
+and the `.sqf` file second:
+
+- `initServer.sqs`, then `initServer.sqf`
+- `initPlayerLocal.sqs`, then `initPlayerLocal.sqf`
+- `initPlayerServer.sqs`, then `initPlayerServer.sqf`
+- `initJIP.sqs`, then `initJIP.sqf`
+
+SQF init files are executed unscheduled, like `init.sqf`, and receive the same
+`_this` argument as the corresponding SQS script.
+
 ## Example
 
 Register lifecycle hooks from `init.sqf`:

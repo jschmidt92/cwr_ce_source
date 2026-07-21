@@ -1923,6 +1923,7 @@ void NetworkServer::OnGameStateMessage(int from, NetworkMessage* msg, NetworkMes
                     using Poseidon::RunMissionScript;
                     Poseidon::RunMissionPhase("playerServerInit", GameValue());
                     RunMissionScript("initPlayerServer.sqs", GameValue());
+                    RunMissionScript("initPlayerServer.sqf", GameValue());
                 }
             }
         }

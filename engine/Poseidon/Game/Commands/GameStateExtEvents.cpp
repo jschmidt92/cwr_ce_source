@@ -5,6 +5,10 @@
 #include <Poseidon/Network/NetworkScriptValueCodec.hpp>
 #include <Poseidon/World/World.hpp>
 
+#include <errno.h>
+#include <limits.h>
+#include <stdlib.h>
+
 #include <map>
 #include <string>
 #include <vector>
@@ -104,6 +108,37 @@ bool ParseEventHandlerTarget(GameValuePar arg, EventHandler& handler)
         return handler.body.GetLength() > 0;
     }
     return false;
+}
+
+bool ParseEventSender(GameValuePar value, int& sender)
+{
+    if (value.GetType() == GameScalar)
+    {
+        sender = toInt(static_cast<float>(value));
+        return true;
+    }
+    if (value.GetType() != GameString)
+    {
+        return false;
+    }
+
+    RString textValue = (RString)(GameStringType)value;
+    const char* text = textValue;
+    if (!text || text[0] == '\0')
+    {
+        return false;
+    }
+
+    errno = 0;
+    char* end = nullptr;
+    long parsed = strtol(text, &end, 10);
+    if (errno == ERANGE || end == text || *end != '\0' || parsed < INT_MIN || parsed > INT_MAX)
+    {
+        return false;
+    }
+
+    sender = static_cast<int>(parsed);
+    return true;
 }
 
 bool CheckEventEmitArg(const GameState* state, GameValuePar arg)
@@ -212,7 +247,7 @@ GameValue MakeEventArgs(const GameState* state, const char* scope, const char* n
     array[0] = GameValue(scope);
     array[1] = GameValue(name);
     array[2] = payload;
-    array[3] = GameValue(static_cast<float>(sender));
+    array[3] = GameValue(std::to_string(sender).c_str());
     return value;
 }
 
@@ -539,7 +574,7 @@ GameValue EventReceive(const GameState* state, GameValuePar arg)
     const std::string scope = GameStringToStdString(array[0]);
     const std::string name = GameStringToStdString(array[1]);
     int sender = Poseidon::CurrentScriptEventSender();
-    if (sender < 0 && array.Size() > 3 && array[3].GetType() == GameScalar)
-        sender = toInt(static_cast<float>(array[3]));
+    if (sender < 0 && array.Size() > 3)
+        ParseEventSender(array[3], sender);
     return GameValue(static_cast<float>(DispatchEvent(state, scope, name, array[2], sender)));
 }

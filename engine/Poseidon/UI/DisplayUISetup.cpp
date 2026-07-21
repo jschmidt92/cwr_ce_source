@@ -1505,10 +1505,12 @@ void DisplayMultiplayerSetup::OnSimulate(EntityAI* vehicle)
                         {
                             RunMissionPhase("serverInit", GameValue());
                             RunMissionScript("initServer.sqs", GameValue());
+                            RunMissionScript("initServer.sqf", GameValue());
                             RunMissionPhase("serverPostInit", GameValue());
                         }
                         RunMissionPhase("playerLocalInit", GameValue());
                         RunMissionScript("initPlayerLocal.sqs", GameValue());
+                        RunMissionScript("initPlayerLocal.sqf", GameValue());
                         RunMissionPhase("playerLocalPostInit", GameValue());
                     }
                     CreateChild(new DisplayServerGetReady(this));
@@ -1614,6 +1616,11 @@ void DisplayMultiplayerSetup::OnSimulate(EntityAI* vehicle)
                     unlink(weapons);
 
                     RunInitScript();
+                    RunMissionPhase("playerLocalInit", GameValue());
+                    void RunMissionScript(const char* filename, GameValue argument);
+                    RunMissionScript("initPlayerLocal.sqs", GameValue());
+                    RunMissionScript("initPlayerLocal.sqf", GameValue());
+                    RunMissionPhase("playerLocalPostInit", GameValue());
                     CreateChild(new DisplayClientGetReady(this));
                     GetNetworkManager().ClientReady(NGSBriefing);
                     break;

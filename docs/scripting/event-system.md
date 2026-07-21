@@ -21,8 +21,10 @@ payload = _this select 2
 sender = _this select 3
 ```
 
-`sender` is the remote sender DPID when an event is delivered through
-`remoteExec`. Local events and single-player fallback events use `-1`.
+`sender` is the remote sender DPID as a string when an event is delivered
+through `remoteExec`. Local events and single-player fallback events use `"-1"`.
+Keep this value as a string when replying to a specific client; large player
+DPIDs are not safe to round-trip through scalar floats.
 
 ## Commands
 
@@ -108,8 +110,9 @@ single-player, it falls back to local dispatch with the `server` scope.
 
 `eventEmitTarget` sends through `remoteExec` to a specific target with the
 `target` scope. The target uses the normal `remoteExec` selector rules: a
-positive DPID targets one client, an object targets its owner, `-2` targets all
-clients, and an array combines selectors. Group targets are expanded by
+positive DPID string targets one client, an object targets its owner, `-2`
+targets all clients, and an array combines selectors. Numeric scalar targets
+still work for small constants such as `0`, `2`, and `-2`. Group targets are expanded by
 `eventEmitTarget` into the group's unit objects before network dispatch, so a
 group sends to the owners of its units rather than only the owner of the group
 object itself.

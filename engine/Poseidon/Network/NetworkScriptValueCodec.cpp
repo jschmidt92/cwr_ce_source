@@ -4,6 +4,9 @@
 #include <Poseidon/Game/Commands/GameStateExt.hpp>
 #include <Poseidon/IO/Streams/QBStream.hpp>
 
+#include <errno.h>
+#include <limits.h>
+#include <stdlib.h>
 #include <string.h>
 
 namespace Poseidon
@@ -32,6 +35,26 @@ AIGroup* GetValGroup(GameValuePar oper)
         return static_cast<GameDataGroup*>(oper.GetData())->GetGroup();
     }
     return nullptr;
+}
+
+bool ParseTargetScalarString(RString value, int& out)
+{
+    const char* text = value;
+    if (!text || text[0] == '\0')
+    {
+        return false;
+    }
+
+    errno = 0;
+    char* end = nullptr;
+    long parsed = strtol(text, &end, 10);
+    if (errno == ERANGE || end == text || *end != '\0' || parsed < INT_MIN || parsed > INT_MAX)
+    {
+        return false;
+    }
+
+    out = static_cast<int>(parsed);
+    return true;
 }
 
 bool SerializeRemoteExecTargetSelector(QOStream& out, const RemoteExecTargetSelector& selector, int depth)
@@ -308,6 +331,11 @@ bool BuildRemoteExecTargetSelector(RemoteExecTargetSelector& out, GameValuePar v
         out.kind = RemoteExecTargetKind::Scalar;
         out.scalar = (int)(GameScalarType)value;
         return true;
+    }
+    if (value.GetType() == GameString)
+    {
+        out.kind = RemoteExecTargetKind::Scalar;
+        return ParseTargetScalarString((RString)(GameStringType)value, out.scalar);
     }
     if (value.GetType() == GameObject)
     {

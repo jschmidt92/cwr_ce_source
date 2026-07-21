@@ -178,6 +178,32 @@ TEST_CASE("Refactor: AdminLoginAllowed equals the original login precondition", 
     }
 }
 
+TEST_CASE("RemoteExec policy allows internal event transport without opening arbitrary calls",
+          "[network][remoteExec][events]")
+{
+    AutoArray<RString> allowed;
+    const int kNoGameMaster = -1;
+    const int from = 12;
+    const int gameMaster = 99;
+    const int botClient = 100;
+
+    REQUIRE(Poseidon::RemoteExecInternalNameAllowed(RString("eventReceive")));
+    REQUIRE(Poseidon::RemoteExecInternalNameAllowed(RString("EVENTRECEIVE")));
+    REQUIRE_FALSE(Poseidon::RemoteExecInternalNameAllowed(RString("hint")));
+
+    REQUIRE(Poseidon::RemoteExecClientAuthorized(from, gameMaster, botClient, kNoGameMaster,
+                                                 Poseidon::RemoteExecPolicyMode::DenyClient, allowed,
+                                                 RString("eventReceive")));
+    REQUIRE_FALSE(Poseidon::RemoteExecClientAuthorized(from, gameMaster, botClient, kNoGameMaster,
+                                                       Poseidon::RemoteExecPolicyMode::DenyClient, allowed,
+                                                       RString("hint")));
+
+    allowed.Add(RString("hint"));
+    REQUIRE(Poseidon::RemoteExecClientAuthorized(from, gameMaster, botClient, kNoGameMaster,
+                                                 Poseidon::RemoteExecPolicyMode::AllowListed, allowed,
+                                                 RString("hint")));
+}
+
 // Transcriptions of the original OnMessagePlayerRole decision logic (the
 // unlocked-path accept condition and the roleLocked computation).
 namespace

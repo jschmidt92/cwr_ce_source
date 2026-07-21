@@ -98,3 +98,18 @@ TEST_CASE("RemoteExecTargetSelector codec round-trips nested selector arrays", "
     REQUIRE(decoded.items[1].kind == RemoteExecTargetKind::Object);
     REQUIRE(decoded.items[1].id == NetworkId(7, 42));
 }
+
+TEST_CASE("RemoteExecTargetSelector accepts exact numeric string targets", "[network][remoteExec][codec]")
+{
+    RemoteExecTargetSelector selector;
+    REQUIRE(BuildRemoteExecTargetSelector(selector, GameValue("1738003416")));
+    REQUIRE(selector.kind == RemoteExecTargetKind::Scalar);
+    REQUIRE(selector.scalar == 1738003416);
+
+    REQUIRE(BuildRemoteExecTargetSelector(selector, GameValue("-2")));
+    REQUIRE(selector.kind == RemoteExecTargetKind::Scalar);
+    REQUIRE(selector.scalar == -2);
+
+    REQUIRE_FALSE(BuildRemoteExecTargetSelector(selector, GameValue("1738003416.0")));
+    REQUIRE_FALSE(BuildRemoteExecTargetSelector(selector, GameValue("not-a-player")));
+}

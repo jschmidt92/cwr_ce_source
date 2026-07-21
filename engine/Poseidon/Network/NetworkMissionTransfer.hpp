@@ -1100,7 +1100,9 @@ void ApplyNetworkMissionPlayEntry(const NetworkMissionPlayEntry<State>& playEntr
     if (playEntry.shouldRunJipInitScripts)
     {
         std::forward<RunScriptFn>(runMissionScript)("initPlayerLocal.sqs");
+        std::forward<RunScriptFn>(runMissionScript)("initPlayerLocal.sqf");
         std::forward<RunScriptFn>(runMissionScript)("initJIP.sqs");
+        std::forward<RunScriptFn>(runMissionScript)("initJIP.sqf");
     }
 
     hideBodies = playEntry.hideBodies;

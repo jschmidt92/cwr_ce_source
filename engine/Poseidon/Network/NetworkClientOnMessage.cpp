@@ -1924,8 +1924,10 @@ void NetworkClient::OnMessage(int from, NetworkMessage* msg, NetworkMessageType 
                             void RunMissionScript(const char* filename, GameValue argument);
                             Poseidon::RunMissionPhase("playerLocalInit", GameValue());
                             Poseidon::RunMissionScript("initPlayerLocal.sqs", GameValue());
+                            Poseidon::RunMissionScript("initPlayerLocal.sqf", GameValue());
                             Poseidon::RunMissionPhase("jipInit", GameValue());
                             Poseidon::RunMissionScript("initJIP.sqs", GameValue());
+                            Poseidon::RunMissionScript("initJIP.sqf", GameValue());
                             Poseidon::RunMissionPhase("playerLocalPostInit", GameValue());
                         }
 

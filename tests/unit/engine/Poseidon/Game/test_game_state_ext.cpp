@@ -67,6 +67,7 @@ GameValue EventGet(const GameState* state, GameValuePar oper1);
 GameValue EventList(const GameState* state);
 GameValue EventOff(const GameState* state, GameValuePar oper1);
 GameValue EventEmitLocal(const GameState* state, GameValuePar oper1);
+GameValue EventReceive(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseOn(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseOff(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseClear(const GameState* state, GameValuePar oper1);
@@ -541,6 +542,31 @@ TEST_CASE("script event dispatch tolerates handler mutation", "[game][gameStateE
     REQUIRE(static_cast<GameScalarType>(EventEmitLocal(&GGameState, emit)) == 2.0f);
     REQUIRE(strcmp(((GameStringType)GGameState.EvaluateMultiple("triRemoteExecLog")).Data(), "first|second") == 0);
     REQUIRE(((const GameArrayType&)EventList(&GGameState)).Size() == 1);
+
+    Poseidon::ClearScriptEventHandlers();
+}
+
+TEST_CASE("script event receive exposes sender as exact string DPID", "[game][gameStateExt][events]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+    Poseidon::ClearScriptEventHandlers();
+    GGameState.EvaluateMultiple("triClearRemoteExecLog");
+
+    GameValue handler =
+        MakeEventRegistration(GGameState, "server", "senderTest", "triRecordRemoteExec [_this select 3]");
+    REQUIRE(static_cast<GameScalarType>(EventOn(&GGameState, handler)) == 1.0f);
+
+    GameValue receive = GGameState.CreateGameValue(GameArray);
+    GameArrayType& args = receive;
+    args.Resize(4);
+    args[0] = GameValue("server");
+    args[1] = GameValue("senderTest");
+    args[2] = GameValue("payload");
+    args[3] = GameValue("1738003416");
+
+    REQUIRE(static_cast<GameScalarType>(EventReceive(&GGameState, receive)) == 1.0f);
+    REQUIRE(strcmp(((GameStringType)GGameState.EvaluateMultiple("triRemoteExecLog")).Data(), "1738003416") == 0);
 
     Poseidon::ClearScriptEventHandlers();
 }

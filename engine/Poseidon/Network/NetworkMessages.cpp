@@ -1933,6 +1933,7 @@ void DocumentFormat(QOStream& out, int index)
 // Initialization of local (static) message formats
 
 #define NMT_DEFINE_FORMAT(macro, class, name, description, group) macro(class, name);
+#define NMT_CLEAR_FORMAT(macro, class, name, description, group) items##name.Clear();
 
 void InitMsgFormats()
 {
@@ -1940,6 +1941,13 @@ void InitMsgFormats()
     {
         return;
     }
+
+    for (int i = 0; i < NMTN; ++i)
+    {
+        GMsgFormats[i] = nullptr;
+    }
+    NETWORK_MESSAGE_TYPES(NMT_CLEAR_FORMAT)
+
     NETWORK_MESSAGE_TYPES(NMT_DEFINE_FORMAT)
     NET_ERROR(curMsgFormat == NMTN);
 
@@ -1978,6 +1986,7 @@ void DestroyMsgFormats()
         if (GMsgFormats[i])
         {
             GMsgFormats[i]->Clear();
+            GMsgFormats[i] = nullptr;
         }
     }
     // Reset the init guard so the next InitMsgFormats() repopulates the items. Without

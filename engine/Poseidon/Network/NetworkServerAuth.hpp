@@ -86,10 +86,19 @@ inline bool RemoteExecNameAllowed(const AutoArray<RString>& allowedNames, RStrin
     return false;
 }
 
+inline bool RemoteExecInternalNameAllowed(RString name)
+{
+    return strcmpi(name, "eventReceive") == 0;
+}
+
 inline bool RemoteExecClientAuthorized(int from, int gameMaster, int botClient, int noGameMaster,
                                        RemoteExecPolicyMode mode, const AutoArray<RString>& allowedNames,
                                        RString name)
 {
+    if (RemoteExecInternalNameAllowed(name))
+    {
+        return true;
+    }
     if (from == botClient)
     {
         return true;
