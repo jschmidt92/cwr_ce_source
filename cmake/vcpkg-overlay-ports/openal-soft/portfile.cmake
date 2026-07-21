@@ -82,6 +82,7 @@ vcpkg_cmake_configure(
         -DALSOFT_BACKEND_PORTAUDIO=OFF
         -DALSOFT_BACKEND_WAVE=ON
     MAYBE_UNUSED_VARIABLES
+        CMAKE_POLICY_DEFAULT_CMP0057
         # NOT WIN32
         ALSOFT_BACKEND_ALSA
         ALSOFT_REQUIRE_ALSA
@@ -97,7 +98,9 @@ vcpkg_cmake_configure(
 )
 
 vcpkg_cmake_install()
-vcpkg_copy_pdbs()
+if(NOT TARGET_TRIPLET MATCHES "clang")
+    vcpkg_copy_pdbs()
+endif()
 vcpkg_cmake_config_fixup(CONFIG_PATH "lib/cmake/OpenAL")
 vcpkg_fixup_pkgconfig()
 
