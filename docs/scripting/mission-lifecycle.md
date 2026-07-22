@@ -4,11 +4,16 @@ Poseidon exposes mission lifecycle hooks for scripts that need to run at known
 mission load phases. This is separate from the runtime event system: lifecycle
 phases are engine-owned and fire in a fixed order during mission startup.
 
-The lifecycle registry is mission-scoped and is cleared at the beginning of
-mission init. `preInit` fires immediately after that clear, before mission
+The `missionPhaseOn` registry is mission-scoped and is cleared at the beginning
+of mission init. `preInit` fires immediately after that clear, before mission
 scripts run, so handlers registered from `init.sqs` or `init.sqf` can catch
 later phases such as `init`, `postInit`, `serverInit`, and `playerLocalInit`,
 but not `preInit`.
+
+Addon and framework layers should use
+[`addonLifecycleRegister`](addon-lifecycle.md) instead of asking every mission
+to register common phase hooks manually. Addon lifecycle handlers persist across
+mission resets and run before mission-scoped handlers for the same phase.
 
 ## Commands
 

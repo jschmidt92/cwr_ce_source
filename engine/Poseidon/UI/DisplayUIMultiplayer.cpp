@@ -38,6 +38,7 @@ using namespace Poseidon;
 #include <Poseidon/Core/ModSystem.hpp>
 #include <Poseidon/Core/PendingConnect.hpp>
 #include <Poseidon/Core/Application.hpp>
+#include <unordered_set>
 #include "ModDownloadSupport.hpp"
 #include <ctype.h>
 #include <stdint.h>
@@ -1015,22 +1016,53 @@ bool DisplayMultiplayer::BeginModdedJoin(const SessionInfo& info)
         installed.emplace_back(m.catalogId.empty() ? m.id : m.catalogId);
     for (const auto& m : Poseidon::ScanModsRoot(Poseidon::ModsWorkshopRoot(), Poseidon::ModSource::Workshop))
         installed.emplace_back(m.catalogId.empty() ? m.id : m.catalogId);
-    std::vector<Poseidon::ModId> active;
-    for (const auto& m : Poseidon::ActiveModsFromMountPath((const char*)Poseidon::ModSystem::GetModList()).All())
-        active.emplace_back(m.catalogId.empty() ? m.id : m.catalogId);
+    std::vector<Poseidon::ModId> active = Poseidon::ServerModList((const char*)Poseidon::ModSystem::GetModNames(),
+                                                                  false)
+                                              .Required();
 
     const Poseidon::ServerModList required((const char*)info.mod, info.equalModRequired);
     const Poseidon::ServerModResolution res = Poseidon::ServerModResolver(installed, active).Resolve(required, catalog);
 
     // Already-mounted check: does the engine's current mount path already equal the
-    // server's required set resolved to disk?
+    // server's required set resolved to disk? Manual -mod launches may not be under
+    // the managed mod roots, so also accept the currently active identities directly.
     Poseidon::ModLoader loader;
     loader.AddRoot(Poseidon::ModsLocalRoot(), Poseidon::ModSource::Local);
     loader.AddRoot(Poseidon::ModsWorkshopRoot(), Poseidon::ModSource::Workshop);
     const std::string requiredPath = loader.Load().MountPathForIds(required.Required());
-    const bool alreadyMounted = (requiredPath == (const char*)Poseidon::ModSystem::GetModList());
+    std::unordered_set<Poseidon::ModId, Poseidon::ModId::Hash> activeSet;
+    for (const Poseidon::ModId& id : active)
+        activeSet.insert(id);
+    bool activeSatisfiesRequired = true;
+    for (const Poseidon::ModId& id : required.Required())
+    {
+        if (activeSet.count(id) == 0)
+        {
+            activeSatisfiesRequired = false;
+            break;
+        }
+    }
+    if (required.RequiresExactMatch())
+    {
+        for (const Poseidon::ModId& id : active)
+        {
+            if (!id.Empty() && !required.Requires(id))
+            {
+                activeSatisfiesRequired = false;
+                break;
+            }
+        }
+    }
+    const bool alreadyMounted =
+        (requiredPath == (const char*)Poseidon::ModSystem::GetModList()) || activeSatisfiesRequired;
 
     const Poseidon::MpJoinAction action = Poseidon::DecideMpJoinAction(res, alreadyMounted);
+    LOG_INFO(Network,
+             "[MP Join] modded join: serverMod='{}' localMod='{}' equalModRequired={} alreadyMounted={} "
+             "satisfied={} download={} disable={} blocked={} action={}",
+             (const char*)info.mod, (const char*)Poseidon::ModSystem::GetModNames(), info.equalModRequired,
+             alreadyMounted, res.Satisfied().size(), res.ToDownload().size(), res.ToDisable().size(),
+             res.Blocked().size(), static_cast<int>(action));
     if (action == Poseidon::MpJoinAction::ConnectDirect)
     {
         return false; // nothing to switch — let the caller JoinSession plainly

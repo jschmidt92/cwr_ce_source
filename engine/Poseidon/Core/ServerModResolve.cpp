@@ -49,6 +49,13 @@ ServerModResolver::ServerModResolver(const std::vector<ModId>& installed, const 
             _installed.insert(id);
         }
     }
+    for (const ModId& id : active)
+    {
+        if (!id.Empty())
+        {
+            _installed.insert(id);
+        }
+    }
 }
 
 ServerModResolution ServerModResolver::Resolve(const ServerModList& server, const ModCatalog& catalog) const

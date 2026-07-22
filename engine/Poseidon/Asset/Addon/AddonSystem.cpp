@@ -26,12 +26,36 @@ extern Poseidon::ParamFile Pars;
 
 namespace Poseidon
 {
+void ClearAddonLifecycleHandlers();
+int RegisterAddonLifecycleHandler(const char* addon, const char* phase, RString body, bool inlineCode);
+int RegisterAddonLifecycleHandler(const char* addon, const char* phase, RString body, bool inlineCode,
+                                  RString addonPrefix);
 
 AddonSystem::AddonInfoMap AddonSystem::s_addonRegistry;
 AutoArray<SRef<ParamFile>> AddonSystem::s_addonConfigs;
 
 namespace
 {
+struct AddonLifecycleClass
+{
+    const char* configClass;
+    const char* phase;
+    const char* serverPhase;
+    const char* clientPhase;
+};
+
+const AddonLifecycleClass AddonLifecycleClasses[] = {
+    {"Extended_PreInit_EventHandlers", "preInit", "serverInit", "playerLocalInit"},
+    {"Extended_Init_EventHandlers", "init", "serverInit", "playerLocalInit"},
+    {"Extended_PostInit_EventHandlers", "postInit", "serverPostInit", "playerLocalPostInit"},
+    {"Extended_ServerInit_EventHandlers", "serverInit", "serverInit", nullptr},
+    {"Extended_ServerPostInit_EventHandlers", "serverPostInit", "serverPostInit", nullptr},
+    {"Extended_PlayerLocalInit_EventHandlers", "playerLocalInit", nullptr, "playerLocalInit"},
+    {"Extended_PlayerLocalPostInit_EventHandlers", "playerLocalPostInit", nullptr, "playerLocalPostInit"},
+    {"Extended_PlayerServerInit_EventHandlers", "playerServerInit", "playerServerInit", nullptr},
+    {"Extended_JIPInit_EventHandlers", "jipInit", nullptr, "jipInit"},
+};
+
 bool ResolveAddonFile(RStringB dir, const char* name, RString& resolvedPath)
 {
     resolvedPath = dir + RString(name);
@@ -60,6 +84,91 @@ bool ResolveAddonFile(RStringB dir, const char* name, RString& resolvedPath)
 
     return false;
 }
+
+bool LooksLikeScriptPath(RStringB value)
+{
+    const char* text = value;
+    if (!text || *text == 0)
+        return false;
+
+    for (const char* pos = text; *pos; ++pos)
+    {
+        if (*pos == ' ' || *pos == '\t' || *pos == ';' || *pos == '{' || *pos == '}')
+            return false;
+    }
+
+    const char* dot = strrchr(text, '.');
+    return dot && (stricmp(dot, ".sqf") == 0 || stricmp(dot, ".sqs") == 0);
+}
+
+RString GetConfigAddonPrefix(const ParamEntry& config)
+{
+    const ParamEntry* cfg = config.FindEntry("CfgPatches");
+    if (!cfg)
+        return RString();
+
+    RString addonName;
+    for (int i = 0; i < cfg->GetEntryCount(); ++i)
+    {
+        const ParamEntry& entry = cfg->GetEntry(i);
+        if (entry.IsClass())
+        {
+            addonName = entry.GetName();
+            break;
+        }
+    }
+    if (addonName.GetLength() == 0)
+        return RString();
+
+    const AddonInfo* info = AddonSystem::FindAddonInfo(addonName);
+    return info ? info->GetPrefix() : RString();
+}
+
+void RegisterAddonLifecycleConfigValue(const ParamEntry& handlerClass, const char* valueName, const char* phase,
+                                       RString addonPrefix)
+{
+    if (!phase)
+        return;
+
+    const ParamEntry* init = handlerClass.FindEntry(valueName);
+    if (!init || !init->IsTextValue())
+        return;
+
+    RString body = init->GetValue();
+    if (body.GetLength() == 0)
+        return;
+
+    const bool inlineCode = !LooksLikeScriptPath(body);
+    RegisterAddonLifecycleHandler(handlerClass.GetName(), phase, body, inlineCode, addonPrefix);
+}
+
+void RegisterAddonLifecycleConfigClass(const ParamEntry& root, const AddonLifecycleClass& lifecycleClass,
+                                       RString addonPrefix)
+{
+    const ParamEntry* handlers = root.FindEntry(lifecycleClass.configClass);
+    if (!handlers)
+        return;
+
+    for (int i = 0; i < handlers->GetEntryCount(); ++i)
+    {
+        const ParamEntry& handlerClass = handlers->GetEntry(i);
+        if (!handlerClass.IsClass())
+            continue;
+
+        RegisterAddonLifecycleConfigValue(handlerClass, "init", lifecycleClass.phase, addonPrefix);
+        RegisterAddonLifecycleConfigValue(handlerClass, "serverInit", lifecycleClass.serverPhase, addonPrefix);
+        RegisterAddonLifecycleConfigValue(handlerClass, "clientInit", lifecycleClass.clientPhase, addonPrefix);
+    }
+}
+
+void RegisterAddonLifecycleConfig(const ParamEntry& root)
+{
+    const RString addonPrefix = GetConfigAddonPrefix(root);
+    for (const AddonLifecycleClass& lifecycleClass : AddonLifecycleClasses)
+    {
+        RegisterAddonLifecycleConfigClass(root, lifecycleClass, addonPrefix);
+    }
+}
 } // namespace
 
 void AddonSystem::RegisterAddon(RString name, RString prefix)
@@ -76,6 +185,7 @@ const AddonInfo* AddonSystem::FindAddonInfo(RString name)
 void AddonSystem::ClearRegistry()
 {
     s_addonRegistry.Clear();
+    ClearAddonLifecycleHandlers();
 }
 
 void AddonSystem::LoadAddon(const char* addon)
@@ -376,6 +486,11 @@ void AddonSystem::ParseAllAddonConfigs()
     }
 
     Pars.SetFile(&Pars);
+    ClearAddonLifecycleHandlers();
+    for (int i = 0; i < resolved.Size(); i++)
+    {
+        RegisterAddonLifecycleConfig(*resolved[i].addon);
+    }
 }
 
 void AddonSystem::ClearAddonConfigs()

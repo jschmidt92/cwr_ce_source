@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <Poseidon/AI/AI.hpp>
+#include <Poseidon/Asset/Addon/AddonSystem.hpp>
 #include <Poseidon/Game/Commands/GameStateExt.hpp>
 #include <Poseidon/Game/Commands/GameStateExtCommon.hpp>
 #include <Poseidon/Foundation/Modules/Modules.hpp>
@@ -22,6 +23,7 @@
 #include <map>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "../test_fixtures.hpp"
@@ -43,6 +45,7 @@ bool DefaultAdvancedEditorMode();
 bool LoadAdvancedEditorModeFromUserParams(const char* userParamsPath);
 void ClearScriptEventHandlers();
 void ClearMissionPhaseHandlers();
+void ClearAddonLifecycleHandlers();
 int RunMissionPhaseForState(GameState* state, const char* phase, GameValuePar argument);
 } // namespace Poseidon
 
@@ -72,6 +75,10 @@ GameValue MissionPhaseOn(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseOff(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseClear(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseList(const GameState* state);
+GameValue AddonLifecycleRegister(const GameState* state, GameValuePar oper1);
+GameValue AddonLifecycleOff(const GameState* state, GameValuePar oper1);
+GameValue AddonLifecycleClear(const GameState* state, GameValuePar oper1);
+GameValue AddonLifecycleList(const GameState* state);
 GameValue FunctionRegister(const GameState* state, GameValuePar oper1);
 GameValue FunctionRegisterAddon(const GameState* state, GameValuePar oper1);
 GameValue FunctionExists(const GameState* state, GameValuePar oper1);
@@ -306,6 +313,33 @@ GameValue MakeMissionPhaseRegistration(const GameState& state, const char* phase
     return value;
 }
 
+GameValue MakeAddonLifecycleRegistration(const GameState& state, const char* addon,
+                                         std::initializer_list<std::pair<const char*, const char*>> entries)
+{
+    GameValue value = state.CreateGameValue(GameArray);
+    GameArrayType& array = value;
+    array.Resize(2);
+    array[0] = GameValue(addon);
+
+    GameValue entryList = state.CreateGameValue(GameArray);
+    GameArrayType& entryArray = entryList;
+    entryArray.Resize(static_cast<int>(entries.size()));
+
+    int index = 0;
+    for (const auto& entry : entries)
+    {
+        GameValue entryValue = state.CreateGameValue(GameArray);
+        GameArrayType& entryItems = entryValue;
+        entryItems.Resize(2);
+        entryItems[0] = GameValue(entry.first);
+        entryItems[1] = GameValue(new GameDataCode(entry.second));
+        entryArray[index++] = entryValue;
+    }
+
+    array[1] = entryList;
+    return value;
+}
+
 GameValue WaitForAsyncLocalDbResult(const GameState& state, GameValue job)
 {
     for (int attempt = 0; attempt < 200; ++attempt)
@@ -433,6 +467,10 @@ TEST_CASE("VBS-derived functions remain registered in GGameState", "[game][gameS
     REQUIRE(ContainsName(nulars, "missionPhaseList"));
     REQUIRE(ContainsName(functions, "missionPhaseOff"));
     REQUIRE(ContainsName(functions, "missionPhaseClear"));
+    REQUIRE(ContainsName(functions, "addonLifecycleRegister"));
+    REQUIRE(ContainsName(nulars, "addonLifecycleList"));
+    REQUIRE(ContainsName(functions, "addonLifecycleOff"));
+    REQUIRE(ContainsName(functions, "addonLifecycleClear"));
     REQUIRE(ContainsName(functions, "functionRegister"));
     REQUIRE(ContainsName(functions, "functionRegisterAddon"));
     REQUIRE(ContainsName(functions, "functionExists"));
@@ -641,6 +679,188 @@ TEST_CASE("mission phase dispatch tolerates handler mutation", "[game][gameState
     REQUIRE(((const GameArrayType&)MissionPhaseList(&GGameState)).Size() == 1);
 
     Poseidon::ClearMissionPhaseHandlers();
+}
+
+TEST_CASE("addon lifecycle handlers are listed and replace previous registrations",
+          "[game][gameStateExt][missionPhase][addonLifecycle]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+    Poseidon::ClearMissionPhaseHandlers();
+    Poseidon::ClearAddonLifecycleHandlers();
+
+    GameValue first = MakeAddonLifecycleRegistration(
+        GGameState, "unit_test_addon",
+        {{"preInit", "triRecordRemoteExec [\"addon-pre\"]"}, {"postInit", "triRecordRemoteExec [\"addon-post\"]"}});
+    REQUIRE(static_cast<GameScalarType>(AddonLifecycleRegister(&GGameState, first)) == 2.0f);
+
+    GameValue listValue = AddonLifecycleList(&GGameState);
+    const GameArrayType& list = listValue;
+    REQUIRE(list.Size() == 2);
+    const GameArrayType& info = list[0];
+    REQUIRE(info.Size() == 5);
+    REQUIRE(static_cast<GameScalarType>(info[0]) == 1.0f);
+    REQUIRE(strcmp(((GameStringType)info[1]).Data(), "unit_test_addon") == 0);
+    REQUIRE(strcmp(((GameStringType)info[2]).Data(), "preInit") == 0);
+    REQUIRE(strcmp(((GameStringType)info[3]).Data(), "code") == 0);
+
+    GameValue replacement = MakeAddonLifecycleRegistration(
+        GGameState, "unit_test_addon", {{"serverInit", "triRecordRemoteExec [\"addon-server\"]"}});
+    REQUIRE(static_cast<GameScalarType>(AddonLifecycleRegister(&GGameState, replacement)) == 1.0f);
+
+    GameValue replacedListValue = AddonLifecycleList(&GGameState);
+    const GameArrayType& replacedList = replacedListValue;
+    REQUIRE(replacedList.Size() == 1);
+    const GameArrayType& replacedInfo = replacedList[0];
+    REQUIRE(static_cast<GameScalarType>(replacedInfo[0]) == 3.0f);
+    REQUIRE(strcmp(((GameStringType)replacedInfo[1]).Data(), "unit_test_addon") == 0);
+    REQUIRE(strcmp(((GameStringType)replacedInfo[2]).Data(), "serverInit") == 0);
+
+    REQUIRE(static_cast<GameScalarType>(AddonLifecycleClear(&GGameState, GameValue("unit_test_addon"))) == 1.0f);
+    REQUIRE(((const GameArrayType&)AddonLifecycleList(&GGameState)).Size() == 0);
+
+    Poseidon::ClearAddonLifecycleHandlers();
+}
+
+TEST_CASE("addon lifecycle dispatch runs before mission handlers and survives mission clear",
+          "[game][gameStateExt][missionPhase][addonLifecycle]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+    Poseidon::ClearMissionPhaseHandlers();
+    Poseidon::ClearAddonLifecycleHandlers();
+    GGameState.EvaluateMultiple("triClearRemoteExecLog");
+
+    GameValue addon = MakeAddonLifecycleRegistration(
+        GGameState, "unit_test_addon", {{"postInit", "triRecordRemoteExec [\"addon\"]"}});
+    REQUIRE(static_cast<GameScalarType>(AddonLifecycleRegister(&GGameState, addon)) == 1.0f);
+
+    GameValue mission = MakeMissionPhaseRegistration(GGameState, "postInit", "triRecordRemoteExec [\"mission\"]");
+    REQUIRE(static_cast<GameScalarType>(MissionPhaseOn(&GGameState, mission)) == 1.0f);
+
+    REQUIRE(Poseidon::RunMissionPhaseForState(&GGameState, "postInit", GameValue()) == 2);
+    REQUIRE(strcmp(((GameStringType)GGameState.EvaluateMultiple("triRemoteExecLog")).Data(), "addon|mission") == 0);
+
+    Poseidon::ClearMissionPhaseHandlers();
+    GGameState.EvaluateMultiple("triClearRemoteExecLog");
+
+    REQUIRE(Poseidon::RunMissionPhaseForState(&GGameState, "postInit", GameValue()) == 1);
+    REQUIRE(strcmp(((GameStringType)GGameState.EvaluateMultiple("triRemoteExecLog")).Data(), "addon") == 0);
+    REQUIRE(((const GameArrayType&)MissionPhaseList(&GGameState)).Size() == 0);
+    REQUIRE(((const GameArrayType&)AddonLifecycleList(&GGameState)).Size() == 1);
+
+    Poseidon::ClearAddonLifecycleHandlers();
+}
+
+TEST_CASE("addon lifecycle handlers can be removed by id", "[game][gameStateExt][missionPhase][addonLifecycle]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+    Poseidon::ClearAddonLifecycleHandlers();
+
+    GameValue addon = MakeAddonLifecycleRegistration(
+        GGameState, "unit_test_addon",
+        {{"postInit", "triRecordRemoteExec [\"first\"]"}, {"postInit", "triRecordRemoteExec [\"second\"]"}});
+    REQUIRE(static_cast<GameScalarType>(AddonLifecycleRegister(&GGameState, addon)) == 2.0f);
+
+    REQUIRE((bool)AddonLifecycleOff(&GGameState, GameValue(1.0f)));
+
+    GameValue listValue = AddonLifecycleList(&GGameState);
+    const GameArrayType& list = listValue;
+    REQUIRE(list.Size() == 1);
+    const GameArrayType& info = list[0];
+    REQUIRE(static_cast<GameScalarType>(info[0]) == 2.0f);
+
+    Poseidon::ClearAddonLifecycleHandlers();
+}
+
+TEST_CASE("addon configs populate lifecycle handlers from Extended event handler classes",
+          "[game][gameStateExt][missionPhase][addonLifecycle][addons]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+    Poseidon::AddonSystem::ClearRegistry();
+    Poseidon::AddonSystem::ClearAddonConfigs();
+    Poseidon::ClearMissionPhaseHandlers();
+    Poseidon::ClearAddonLifecycleHandlers();
+
+    const auto root = std::filesystem::temp_directory_path() / "poseidon_addon_lifecycle_config";
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root);
+
+    {
+        std::ofstream config(root / "config.cpp", std::ios::binary);
+        REQUIRE(config.is_open());
+        config << "class CfgPatches{class UnitTestLifecycleAddon{units[]={};weapons[]={};requiredVersion=1.0;};};\n";
+        config << "class Extended_PreInit_EventHandlers{class unit_test_lifecycle{init=\"unit_test\\XEH_preInit.sqf\";serverInit=\"unit_test\\XEH_serverPreInit.sqf\";clientInit=\"unit_test\\XEH_clientPreInit.sqf\";};};\n";
+        config << "class Extended_PostInit_EventHandlers{class unit_test_lifecycle{init=\"triRecordRemoteExec [1]\";};};\n";
+        config << "class Extended_ServerInit_EventHandlers{class unit_test_server{init=\"unit_test\\XEH_server.sqs\";};};\n";
+    }
+
+    std::string prefix = root.string();
+    prefix.push_back(std::filesystem::path::preferred_separator);
+    REQUIRE(Poseidon::AddonSystem::ParseAddonConfig(prefix.c_str()));
+    Poseidon::AddonSystem::ParseAllAddonConfigs();
+
+    GameValue listValue = AddonLifecycleList(&GGameState);
+    const GameArrayType& list = listValue;
+    REQUIRE(list.Size() == 5);
+
+    bool foundPreInit = false;
+    bool foundPreInitServer = false;
+    bool foundPreInitClient = false;
+    bool foundPostInit = false;
+    bool foundServerInit = false;
+    for (int i = 0; i < list.Size(); ++i)
+    {
+        const GameArrayType& info = list[i];
+        REQUIRE(info.Size() == 5);
+
+        const std::string addon = ((GameStringType)info[1]).Data();
+        const std::string phase = ((GameStringType)info[2]).Data();
+        const std::string type = ((GameStringType)info[3]).Data();
+        const std::string body = ((GameStringType)info[4]).Data();
+
+        if (addon == "unit_test_lifecycle" && phase == "preInit")
+        {
+            foundPreInit = true;
+            REQUIRE(type == "script");
+            REQUIRE(body == "unit_test\\XEH_preInit.sqf");
+        }
+        if (addon == "unit_test_lifecycle" && phase == "serverInit" && body == "unit_test\\XEH_serverPreInit.sqf")
+        {
+            foundPreInitServer = true;
+            REQUIRE(type == "script");
+        }
+        if (addon == "unit_test_lifecycle" && phase == "playerLocalInit" && body == "unit_test\\XEH_clientPreInit.sqf")
+        {
+            foundPreInitClient = true;
+            REQUIRE(type == "script");
+        }
+        if (addon == "unit_test_lifecycle" && phase == "postInit")
+        {
+            foundPostInit = true;
+            REQUIRE(type == "code");
+            REQUIRE(body == "triRecordRemoteExec [1]");
+        }
+        if (addon == "unit_test_server" && phase == "serverInit")
+        {
+            foundServerInit = true;
+            REQUIRE(type == "script");
+            REQUIRE(body == "unit_test\\XEH_server.sqs");
+        }
+    }
+
+    REQUIRE(foundPreInit);
+    REQUIRE(foundPreInitServer);
+    REQUIRE(foundPreInitClient);
+    REQUIRE(foundPostInit);
+    REQUIRE(foundServerInit);
+
+    Poseidon::AddonSystem::ClearAddonConfigs();
+    Poseidon::AddonSystem::ClearRegistry();
+    std::filesystem::remove_all(root, ec);
 }
 
 TEST_CASE("registered script functions are callable through call", "[game][gameStateExt][functions]")

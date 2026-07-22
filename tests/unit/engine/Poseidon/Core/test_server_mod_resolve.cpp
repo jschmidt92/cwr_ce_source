@@ -119,6 +119,17 @@ TEST_CASE("ServerModResolver - all required already installed -> no work, can co
     REQUIRE(res.CanProceed());
 }
 
+TEST_CASE("ServerModResolver - active command-line mods satisfy required mods", "[mods][resolve]")
+{
+    const ServerModResolver r(Ids({}), Ids({"@ids_test"}));
+    const auto res = r.Resolve(ServerModList("@ids_test", false), Catalog());
+    REQUIRE(Has(res.Satisfied(), "ids_test"));
+    REQUIRE(res.ToDownload().empty());
+    REQUIRE(res.Blocked().empty());
+    REQUIRE_FALSE(res.NeedsWork());
+    REQUIRE(res.CanProceed());
+}
+
 TEST_CASE("ServerModResolver - missing-but-in-catalog -> download with url + size", "[mods][resolve]")
 {
     const ServerModResolver r(Ids({"@csla"}), Ids({"@csla"}));

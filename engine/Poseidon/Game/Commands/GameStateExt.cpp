@@ -662,6 +662,10 @@ GameValue MissionPhaseOn(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseOff(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseClear(const GameState* state, GameValuePar oper1);
 GameValue MissionPhaseList(const GameState* state);
+GameValue AddonLifecycleRegister(const GameState* state, GameValuePar oper1);
+GameValue AddonLifecycleOff(const GameState* state, GameValuePar oper1);
+GameValue AddonLifecycleClear(const GameState* state, GameValuePar oper1);
+GameValue AddonLifecycleList(const GameState* state);
 GameValue FunctionRegister(const GameState* state, GameValuePar oper1);
 GameValue FunctionRegisterAddon(const GameState* state, GameValuePar oper1);
 GameValue FunctionExists(const GameState* state, GameValuePar oper1);
@@ -995,6 +999,7 @@ static const GameNular* GetExtNular(int& count)
         GameNular(GameBool, "isJIP", IsJIP),
         GameNular(GameArray, "eventList", EventList),
         GameNular(GameArray, "missionPhaseList", MissionPhaseList),
+        GameNular(GameArray, "addonLifecycleList", AddonLifecycleList),
         GameNular(GameArray, "functionList", FunctionList),
         GameNular(GameBool, "functionClear", FunctionClear),
         GameNular(GameBool, "functionClearAddon", FunctionClearAddon),
@@ -1147,6 +1152,9 @@ static const GameFunction* GetExtUnary(int& count)
         GameFunction(GameScalar, "missionPhaseOn", MissionPhaseOn, GameArray),
         GameFunction(GameBool, "missionPhaseOff", MissionPhaseOff, GameScalar),
         GameFunction(GameScalar, "missionPhaseClear", MissionPhaseClear, GameString),
+        GameFunction(GameScalar, "addonLifecycleRegister", AddonLifecycleRegister, GameArray),
+        GameFunction(GameBool, "addonLifecycleOff", AddonLifecycleOff, GameScalar),
+        GameFunction(GameScalar, "addonLifecycleClear", AddonLifecycleClear, GameString),
         GameFunction(GameBool, "functionRegister", FunctionRegister, GameArray),
         GameFunction(GameBool, "functionRegisterAddon", FunctionRegisterAddon, GameArray),
         GameFunction(GameBool, "functionExists", FunctionExists, GameString),

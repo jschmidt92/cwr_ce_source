@@ -60,6 +60,11 @@ See [event-system.md](event-system.md) for `eventOn`, `eventGet`, `eventList`,
 See [mission-lifecycle.md](mission-lifecycle.md) for `missionPhaseOn`,
 `missionPhaseOff`, `missionPhaseClear`, and `missionPhaseList`.
 
+## Addon Lifecycle
+
+See [addon-lifecycle.md](addon-lifecycle.md) for `addonLifecycleRegister`,
+`addonLifecycleOff`, `addonLifecycleClear`, and `addonLifecycleList`.
+
 ## Script Functions
 
 See [functions.md](functions.md) for `functionRegister`,

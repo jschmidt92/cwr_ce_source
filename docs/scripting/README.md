@@ -1,6 +1,7 @@
 # Scripting
 
 - [Script Event System](event-system.md)
+- [Addon Lifecycle](addon-lifecycle.md)
 - [Database and Cache](database.md)
 - [JSON Commands](json.md)
 - [Scripting Commands](commands.md)
