@@ -18,6 +18,8 @@ functionList
 functionClear
 functionClearAddon
 args spawn code
+scriptDone scriptId
+terminate scriptId
 ```
 
 `functionRegister` registers a mission-scoped function and returns `true` when
@@ -49,11 +51,19 @@ functionRegister ["IDS_fnc_loadActor", "functions\actors\fn_loadActor.sqf"]
 id:
 
 ```sqf
-[player] spawn IDS_fnc_trackActor
+handle = [player] spawn IDS_fnc_trackActor
 ```
 
-The initial `spawn` return value is an id for diagnostics. Rich script handles
-and termination/status commands can be layered in later.
+Use `scriptDone` to test whether a spawned script has finished. Unknown or
+already removed script ids are treated as done. Use `terminate` to stop a
+running spawned script; it returns `true` when an active script was found and
+stopped.
+
+```sqf
+handle = ["hello"] spawn IDS_fnc_worker
+done = scriptDone handle
+stopped = terminate handle
+```
 
 `functionGet` returns:
 

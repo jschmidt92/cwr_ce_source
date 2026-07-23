@@ -676,6 +676,8 @@ GameValue FunctionUnregisterAddon(const GameState* state, GameValuePar oper1);
 GameValue FunctionClear(const GameState* state);
 GameValue FunctionClearAddon(const GameState* state);
 GameValue FunctionSpawn(const GameState* state, GameValuePar oper1, GameValuePar oper2);
+GameValue FunctionScriptDone(const GameState* state, GameValuePar oper1);
+GameValue FunctionTerminate(const GameState* state, GameValuePar oper1);
 GameValue PublicExec(const GameState* state, GameValuePar oper1);
 GameValue RemoteExec(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue RemoteExecCall(const GameState* state, GameValuePar oper1, GameValuePar oper2);
@@ -998,8 +1000,6 @@ static const GameNular* GetExtNular(int& count)
         GameNular(GameBool, "isServer", IsServer),
         GameNular(GameBool, "isJIP", IsJIP),
         GameNular(GameArray, "eventList", EventList),
-        GameNular(GameArray, "missionPhaseList", MissionPhaseList),
-        GameNular(GameArray, "addonLifecycleList", AddonLifecycleList),
         GameNular(GameArray, "functionList", FunctionList),
         GameNular(GameBool, "functionClear", FunctionClear),
         GameNular(GameBool, "functionClearAddon", FunctionClearAddon),
@@ -1149,18 +1149,14 @@ static const GameFunction* GetExtUnary(int& count)
         GameFunction(GameBool, "eventEmitServer", EventEmitServer, GameArray),
         GameFunction(GameBool, "eventEmitTarget", EventEmitTarget, GameArray),
         GameFunction(GameScalar, "eventReceive", EventReceive, GameArray),
-        GameFunction(GameScalar, "missionPhaseOn", MissionPhaseOn, GameArray),
-        GameFunction(GameBool, "missionPhaseOff", MissionPhaseOff, GameScalar),
-        GameFunction(GameScalar, "missionPhaseClear", MissionPhaseClear, GameString),
-        GameFunction(GameScalar, "addonLifecycleRegister", AddonLifecycleRegister, GameArray),
-        GameFunction(GameBool, "addonLifecycleOff", AddonLifecycleOff, GameScalar),
-        GameFunction(GameScalar, "addonLifecycleClear", AddonLifecycleClear, GameString),
         GameFunction(GameBool, "functionRegister", FunctionRegister, GameArray),
         GameFunction(GameBool, "functionRegisterAddon", FunctionRegisterAddon, GameArray),
         GameFunction(GameBool, "functionExists", FunctionExists, GameString),
         GameFunction(GameArray, "functionGet", FunctionGet, GameString),
         GameFunction(GameBool, "functionUnregister", FunctionUnregister, GameString),
         GameFunction(GameBool, "functionUnregisterAddon", FunctionUnregisterAddon, GameString),
+        GameFunction(GameBool, "scriptDone", FunctionScriptDone, GameScalar),
+        GameFunction(GameBool, "terminate", FunctionTerminate, GameScalar),
         GameFunction(GameNothing, "publicVariable", PublicVariable, GameString),
         GameFunction(GameNothing, "saveMission", SaveMission, GameString),
         GameFunction(GameNothing, "publicVariableArray", PublicVariable, GameString),

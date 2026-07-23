@@ -3,6 +3,8 @@
 #include <Poseidon/IO/Streams/QBStream.hpp>
 #include <Poseidon/World/World.hpp>
 
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -24,16 +26,58 @@ struct ScriptFunction
     RString body;
 };
 
+struct SpawnedScript
+{
+    int id = 0;
+    LLink<Poseidon::Script> script;
+};
+
 std::vector<ScriptFunction>& ScriptFunctions()
 {
     static std::vector<ScriptFunction> functions;
     return functions;
 }
 
+std::vector<SpawnedScript>& SpawnedScripts()
+{
+    static std::vector<SpawnedScript> scripts;
+    return scripts;
+}
+
 int& NextSpawnId()
 {
     static int id = 1;
     return id;
+}
+
+void PruneSpawnedScripts()
+{
+    std::vector<SpawnedScript>& scripts = SpawnedScripts();
+    for (auto it = scripts.begin(); it != scripts.end();)
+    {
+        Poseidon::Script* script = it->script;
+        if (!script)
+        {
+            it = scripts.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+}
+
+SpawnedScript* FindSpawnedScript(int id)
+{
+    PruneSpawnedScripts();
+    for (SpawnedScript& spawned : SpawnedScripts())
+    {
+        if (spawned.id == id)
+        {
+            return &spawned;
+        }
+    }
+    return nullptr;
 }
 
 std::string GameStringToStdString(GameValuePar value)
@@ -64,6 +108,66 @@ const char* FunctionLifetimeName(FunctionLifetime lifetime)
     return lifetime == FunctionLifetime::Addon ? "addon" : "mission";
 }
 
+RString StripLeadingSlash(RString value)
+{
+    if (value.GetLength() > 0 && (value[0] == '\\' || value[0] == '/'))
+    {
+        return value.Substring(1, value.GetLength());
+    }
+    return value;
+}
+
+RString LeafName(RString value)
+{
+    for (int i = value.GetLength() - 1; i >= 0; --i)
+    {
+        if (value[i] == '\\' || value[i] == '/')
+        {
+            return value.Substring(i + 1, value.GetLength());
+        }
+    }
+    return value;
+}
+
+bool ReadExistingFunctionFile(RString source, RString& body)
+{
+    source = StripLeadingSlash(source);
+    if (source.GetLength() == 0)
+    {
+        return false;
+    }
+
+    if (QIFStreamB::FileExist(source))
+    {
+        QIFStreamB in;
+        in.AutoOpen(source);
+        if (in.rest() <= 0)
+        {
+            body = RString();
+            return true;
+        }
+        body = RString(in.act(), in.rest());
+        return true;
+    }
+
+    std::ifstream in(source.Data(), std::ios::binary);
+    if (!in.is_open())
+    {
+        return false;
+    }
+
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (text.empty())
+    {
+        body = RString();
+    }
+    else
+    {
+        body = RString(text.c_str(), static_cast<int>(text.size()));
+    }
+    return true;
+}
+
 bool ReadFunctionFile(RString source, RString& body)
 {
     QIFStreamB in;
@@ -78,6 +182,16 @@ bool ReadFunctionFile(RString source, RString& body)
     }
     body = RString(in.act(), in.rest());
     return true;
+}
+
+bool ReadFunctionFile(RString source, FunctionLifetime lifetime, RString& body)
+{
+    if (lifetime == FunctionLifetime::Addon &&
+        Poseidon::ReadAddonFunctionFile(source, Poseidon::CurrentAddonLifecyclePrefix(), body))
+    {
+        return true;
+    }
+    return ReadFunctionFile(source, body);
 }
 
 GameValue MakeCodeValue(RString body)
@@ -245,7 +359,7 @@ GameValue RegisterFunctionWithLifetime(const GameState* state, GameValuePar arg,
 
     RString source = array[1];
     RString body;
-    if (!ReadFunctionFile(source, body))
+    if (!ReadFunctionFile(source, lifetime, body))
     {
         return GameValue(false);
     }
@@ -255,15 +369,37 @@ GameValue RegisterFunctionWithLifetime(const GameState* state, GameValuePar arg,
 
 namespace Poseidon
 {
+bool ReadAddonFunctionFile(RString source, RString addonPrefix, RString& body)
+{
+    if (addonPrefix.GetLength() == 0)
+    {
+        return false;
+    }
+
+    source = StripLeadingSlash(source);
+    RString leaf = LeafName(source);
+    RString candidates[] = {addonPrefix + source, addonPrefix + leaf, source, leaf};
+    for (const RString& candidate : candidates)
+    {
+        if (ReadExistingFunctionFile(candidate, body))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 void ClearScriptFunctions()
 {
     ScriptFunctions().clear();
+    SpawnedScripts().clear();
     NextSpawnId() = 1;
 }
 
 void ClearScriptFunctions(const GameState* state)
 {
     ClearFunctionsByLifetime(state, FunctionLifetime::Mission);
+    SpawnedScripts().clear();
     NextSpawnId() = 1;
 }
 
@@ -391,5 +527,60 @@ GameValue FunctionSpawn(const GameState* state, GameValuePar oper1, GameValuePar
     lines.Add(body);
     Poseidon::Script* script = new Poseidon::Script(lines, oper1);
     Poseidon::GWorld->AddScript(script);
-    return GameValue(static_cast<float>(NextSpawnId()++));
+
+    SpawnedScript spawned;
+    spawned.id = NextSpawnId()++;
+    spawned.script = script;
+    SpawnedScripts().push_back(spawned);
+    return GameValue(static_cast<float>(spawned.id));
+}
+
+GameValue FunctionScriptDone(const GameState* state, GameValuePar arg)
+{
+    if (arg.GetType() != GameScalar)
+    {
+        state->TypeError(GameScalar, arg.GetType());
+        return GameValue(true);
+    }
+
+    const int id = toInt(static_cast<float>(arg));
+    SpawnedScript* spawned = FindSpawnedScript(id);
+    if (!spawned)
+    {
+        return GameValue(true);
+    }
+
+    Poseidon::Script* script = spawned->script;
+    return GameValue(!script || script->IsTerminated());
+}
+
+GameValue FunctionTerminate(const GameState* state, GameValuePar arg)
+{
+    if (arg.GetType() != GameScalar)
+    {
+        state->TypeError(GameScalar, arg.GetType());
+        return GameValue(false);
+    }
+
+    const int id = toInt(static_cast<float>(arg));
+    SpawnedScript* spawned = FindSpawnedScript(id);
+    if (!spawned)
+    {
+        return GameValue(false);
+    }
+
+    Poseidon::Script* script = spawned->script;
+    if (!script)
+    {
+        PruneSpawnedScripts();
+        return GameValue(false);
+    }
+
+    script->Exit();
+    if (Poseidon::GWorld)
+    {
+        Poseidon::GWorld->TerminateScript(script);
+    }
+    PruneSpawnedScripts();
+    return GameValue(true);
 }

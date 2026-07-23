@@ -47,6 +47,8 @@ bool GetPos(Vector3& ret, GameValuePar oper);
 // Weapon/magazine pool commands (defined in OptionsUI.cpp, namespace Poseidon)
 namespace Poseidon
 {
+RString CurrentAddonLifecyclePrefix();
+bool ReadAddonFunctionFile(RString source, RString addonPrefix, RString& body);
 GameValue PoolAddWeapon(const GameState* state, GameValuePar oper1);
 GameValue PoolAddMagazine(const GameState* state, GameValuePar oper1);
 GameValue PoolGetWeapons(const GameState* state, GameValuePar oper1);

@@ -5,7 +5,7 @@ layers. They run from the same engine-owned phases as mission lifecycle handlers
 but they are addon-scoped and survive mission resets.
 
 Use this layer for XEH-style bootstrapping: an addon registers its init scripts
-once, and missions do not need to call `missionPhaseOn` manually.
+once through config, and missions do not need manual lifecycle registration.
 
 ## Config Classes
 
@@ -56,47 +56,30 @@ Supported classes:
 Supported values in each nested class:
 
 - `init`: runs on the class's base phase.
-- `serverInit`: runs on the matching server phase, when that class has one.
-- `clientInit`: runs on the matching client/player-local phase, when that class
-  has one.
+- `serverInit`: runs on the server-only variant of the class phase, when that
+  class has one.
+- `clientInit`: runs on the client/player-local variant of the class phase,
+  when that class has one.
 
 For example, inside `Extended_PreInit_EventHandlers`, `serverInit` maps to
-`serverInit` and `clientInit` maps to `playerLocalInit`. Inside
+`serverPreInit` and `clientInit` maps to `playerLocalPreInit`. Inside
 `Extended_PostInit_EventHandlers`, `serverInit` maps to `serverPostInit` and
 `clientInit` maps to `playerLocalPostInit`.
 
-## Low-Level Commands
+The config-facing pre/post order is:
 
-The scripting commands are mostly useful for tests, diagnostics, and custom
-loaders. Normal addons should prefer config classes.
-
-```sqf
-addonLifecycleRegister ["addonName", [["phase", "script.sqf"], ["phase", { statement; statement }]]]
-addonLifecycleOff handlerId
-addonLifecycleClear "addonName"
-addonLifecycleList
+```text
+preInit
+serverPreInit / playerLocalPreInit
+init.sqf
+postInit
+serverPostInit / playerLocalPostInit
 ```
-
-`addonLifecycleRegister` replaces any previous handlers for the same addon name
-and returns the number of handlers registered. This makes repeated addon startup
-safe: the same addon can register again without duplicating its hooks.
-
-`addonLifecycleList` returns handler records:
-
-```sqf
-[
-  [id, addonName, phase, type, body],
-  [id, addonName, phase, type, body]
-]
-```
-
-`type` is `"script"` for script-file handlers or `"code"` for inline code block
-handlers.
 
 ## Dispatch
 
-When a phase fires, addon lifecycle handlers run before mission-scoped
-`missionPhaseOn` handlers for that same phase.
+When a phase fires, addon lifecycle handlers run from the internal engine-owned
+phase registry.
 
 Each handler receives the normal mission phase `_this` payload:
 
@@ -105,9 +88,8 @@ phase = _this select 0
 argument = _this select 1
 ```
 
-Addon lifecycle handlers are not cleared by mission init. Use
-`addonLifecycleClear` for one addon or `addonLifecycleOff` for a specific
-handler when an addon layer needs to unload or replace itself.
+Addon lifecycle handlers are not cleared by mission init. They are populated
+from addon config when addons are loaded.
 
 ## XEH Bootstrap Pattern
 
@@ -115,5 +97,4 @@ The mission can stay focused on mission-specific setup. It does not need to
 register addon phase handlers itself; the addon config does that when the addon
 is loaded.
 
-For simple mission-only hooks, keep using `missionPhaseOn`. For reusable mod or
-framework startup, use `Extended_*_EventHandlers`.
+For reusable mod or framework startup, use `Extended_*_EventHandlers`.

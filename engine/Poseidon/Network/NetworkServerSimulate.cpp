@@ -772,7 +772,6 @@ void NetworkServer::SimulateDS()
                     Poseidon::RunMissionPhase("serverInit", GameValue());
                     Poseidon::RunMissionScript("initServer.sqs", GameValue());
                     Poseidon::RunMissionScript("initServer.sqf", GameValue());
-                    Poseidon::RunMissionPhase("serverPostInit", GameValue());
 
                     message = GetMaxErrorMessage();
                     if (message.GetLength() > 0)

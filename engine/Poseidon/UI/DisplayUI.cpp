@@ -154,6 +154,31 @@ void ExecuteMissionSqf(const char* filename, GameValue argument)
     gs->Execute((const char*)code);
     gs->EndContext();
 }
+
+bool ShouldRunServerLifecyclePhase()
+{
+    return GWorld && GWorld->GetMode() == GModeNetware && GetNetworkManager().IsServer();
+}
+
+bool ShouldRunPlayerLocalLifecyclePhase()
+{
+    if (!GWorld)
+        return false;
+
+    if (GWorld->GetMode() != GModeNetware)
+        return true;
+
+    return !ENGINE_CONFIG.doCreateDedicatedServer;
+}
+
+void RunScopedLifecyclePhases(const char* serverPhase, const char* playerLocalPhase)
+{
+    if (ShouldRunServerLifecyclePhase())
+        Poseidon::RunMissionPhase(serverPhase, GameValue());
+
+    if (ShouldRunPlayerLocalLifecyclePhase())
+        Poseidon::RunMissionPhase(playerLocalPhase, GameValue());
+}
 } // namespace
 
 void RunInitScript()
@@ -162,6 +187,7 @@ void RunInitScript()
     Poseidon::ClearMissionPhaseHandlers();
     Poseidon::ClearScriptFunctions(GWorld ? GWorld->GetGameState() : nullptr);
     Poseidon::RunMissionPhase("preInit", GameValue());
+    RunScopedLifecyclePhases("serverPreInit", "playerLocalPreInit");
 
     RString initScript = GetMissionDirectory() + RString("init.sqs");
     if (QIFStreamB::FileExist(initScript))
@@ -176,6 +202,7 @@ void RunInitScript()
 
     Poseidon::RunMissionPhase("init", GameValue());
     Poseidon::RunMissionPhase("postInit", GameValue());
+    RunScopedLifecyclePhases("serverPostInit", "playerLocalPostInit");
 }
 
 void RunMissionScript(const char* filename, GameValue argument)

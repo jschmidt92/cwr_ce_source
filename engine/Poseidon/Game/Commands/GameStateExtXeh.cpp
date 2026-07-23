@@ -47,6 +47,29 @@ int& NextAddonLifecycleHandlerId()
     return id;
 }
 
+RString& ActiveAddonLifecyclePrefix()
+{
+    static RString prefix;
+    return prefix;
+}
+
+class AddonLifecyclePrefixScope
+{
+  public:
+    explicit AddonLifecyclePrefixScope(RString prefix) : _previous(ActiveAddonLifecyclePrefix())
+    {
+        ActiveAddonLifecyclePrefix() = prefix;
+    }
+
+    ~AddonLifecyclePrefixScope()
+    {
+        ActiveAddonLifecyclePrefix() = _previous;
+    }
+
+  private:
+    RString _previous;
+};
+
 bool CheckMissionPhaseOnArg(const GameState* state, GameValuePar arg)
 {
     if (arg.GetType() != GameArray)
@@ -189,7 +212,7 @@ RString ResolveAddonLifecycleScriptName(const MissionPhaseHandler& handler)
     {
         if (body[i] == '\\' || body[i] == '/')
         {
-            leaf = body.Substring(i + 1, body.GetLength() - i - 1);
+            leaf = body.Substring(i + 1, body.GetLength());
             break;
         }
     }
@@ -227,6 +250,7 @@ int DispatchMissionPhaseHandlers(GameState* state, const std::vector<MissionPhas
     int dispatched = 0;
     for (const MissionPhaseHandler& handler : matchingHandlers)
     {
+        AddonLifecyclePrefixScope prefixScope(handler.addonPrefix);
         GameValue args = MakeMissionPhaseArgs(state, handler.phase.c_str(), argument);
         if (handler.inlineCode)
         {
@@ -243,6 +267,7 @@ int DispatchMissionPhaseHandlers(GameState* state, const std::vector<MissionPhas
 
             Poseidon::Script* script = new Poseidon::Script(ResolveAddonLifecycleScriptName(handler), args);
             Poseidon::GWorld->AddScript(script);
+            Poseidon::GWorld->SimulateScripts();
         }
         ++dispatched;
     }
@@ -252,6 +277,11 @@ int DispatchMissionPhaseHandlers(GameState* state, const std::vector<MissionPhas
 
 namespace Poseidon
 {
+RString CurrentAddonLifecyclePrefix()
+{
+    return ActiveAddonLifecyclePrefix();
+}
+
 int RunMissionPhaseForState(GameState* state, const char* phase, GameValuePar argument)
 {
     if (!state || !phase || *phase == 0)

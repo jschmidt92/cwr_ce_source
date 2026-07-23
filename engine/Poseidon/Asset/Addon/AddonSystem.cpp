@@ -45,7 +45,7 @@ struct AddonLifecycleClass
 };
 
 const AddonLifecycleClass AddonLifecycleClasses[] = {
-    {"Extended_PreInit_EventHandlers", "preInit", "serverInit", "playerLocalInit"},
+    {"Extended_PreInit_EventHandlers", "preInit", "serverPreInit", "playerLocalPreInit"},
     {"Extended_Init_EventHandlers", "init", "serverInit", "playerLocalInit"},
     {"Extended_PostInit_EventHandlers", "postInit", "serverPostInit", "playerLocalPostInit"},
     {"Extended_ServerInit_EventHandlers", "serverInit", "serverInit", nullptr},

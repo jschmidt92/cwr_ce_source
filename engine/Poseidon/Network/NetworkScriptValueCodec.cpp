@@ -223,12 +223,14 @@ bool EncodeScriptValue(AutoArray<char>& out, GameValuePar value)
     return true;
 }
 
-GameValue DeserializeScriptValue(QIStream& in, ResolveNetworkObjectFn resolveObject, void* resolveContext, int depth)
+GameValue DeserializeScriptValue(QIStream& in, ResolveNetworkObjectFn resolveObject, void* resolveContext, int depth,
+                                 bool& ok)
 {
     int type;
     in.read(&type, sizeof(int));
     if (in.fail())
     {
+        ok = false;
         return GameValue();
     }
 
@@ -236,13 +238,23 @@ GameValue DeserializeScriptValue(QIStream& in, ResolveNetworkObjectFn resolveObj
     {
         GameScalarType value;
         in.read(&value, sizeof(value));
-        return in.fail() ? GameValue() : GameValue(value);
+        if (in.fail())
+        {
+            ok = false;
+            return GameValue();
+        }
+        return GameValue(value);
     }
     if (type == GameBool)
     {
         GameBoolType value;
         in.read(&value, sizeof(value));
-        return in.fail() ? GameValue() : GameValue(value);
+        if (in.fail())
+        {
+            ok = false;
+            return GameValue();
+        }
+        return GameValue(value);
     }
     if (type == GameString)
     {
@@ -250,6 +262,7 @@ GameValue DeserializeScriptValue(QIStream& in, ResolveNetworkObjectFn resolveObj
         in.read(&len, sizeof(int));
         if (in.fail() || len < 0 || len > kMaxScriptValueStringBytes)
         {
+            ok = false;
             return GameValue();
         }
         RString data("", len + 1);
@@ -257,6 +270,7 @@ GameValue DeserializeScriptValue(QIStream& in, ResolveNetworkObjectFn resolveObj
         in.read(ptr, len);
         if (in.fail())
         {
+            ok = false;
             return GameValue();
         }
         ptr[len] = 0;
@@ -268,6 +282,7 @@ GameValue DeserializeScriptValue(QIStream& in, ResolveNetworkObjectFn resolveObj
         in.read(&id, sizeof(id));
         if (in.fail())
         {
+            ok = false;
             return GameValue();
         }
         NetworkObject* object = resolveObject ? resolveObject(resolveContext, id) : nullptr;
@@ -279,6 +294,7 @@ GameValue DeserializeScriptValue(QIStream& in, ResolveNetworkObjectFn resolveObj
         in.read(&id, sizeof(id));
         if (in.fail())
         {
+            ok = false;
             return GameValue();
         }
         NetworkObject* object = resolveObject ? resolveObject(resolveContext, id) : nullptr;
@@ -288,21 +304,24 @@ GameValue DeserializeScriptValue(QIStream& in, ResolveNetworkObjectFn resolveObj
     {
         if (depth >= kMaxScriptValueArrayDepth)
         {
+            ok = false;
             return GameValue();
         }
         int count;
         in.read(&count, sizeof(int));
         if (in.fail() || count < 0 || count > kMaxScriptValueArrayCount)
         {
+            ok = false;
             return GameValue();
         }
         GameArrayType array;
         array.Resize(count);
         for (int i = 0; i < count; ++i)
         {
-            array[i] = DeserializeScriptValue(in, resolveObject, resolveContext, depth + 1);
-            if (in.fail())
+            array[i] = DeserializeScriptValue(in, resolveObject, resolveContext, depth + 1, ok);
+            if (!ok || in.fail())
             {
+                ok = false;
                 return GameValue();
             }
         }
@@ -313,14 +332,22 @@ GameValue DeserializeScriptValue(QIStream& in, ResolveNetworkObjectFn resolveObj
         return GameValue();
     }
 
+    ok = false;
     return GameValue();
+}
+
+GameValue DeserializeScriptValue(QIStream& in, ResolveNetworkObjectFn resolveObject, void* resolveContext, int depth)
+{
+    bool ok = true;
+    GameValue value = DeserializeScriptValue(in, resolveObject, resolveContext, depth, ok);
+    return ok ? value : GameValue();
 }
 
 GameValue DecodeScriptValue(const AutoArray<char>& bytes, ResolveNetworkObjectFn resolveObject, void* resolveContext)
 {
     QIStream stream;
     stream.init(bytes.Data(), bytes.Size());
-    return DeserializeScriptValue(stream, resolveObject, resolveContext, 0);
+    return DeserializeScriptValue(stream, resolveObject, resolveContext);
 }
 
 bool BuildRemoteExecTargetSelector(RemoteExecTargetSelector& out, GameValuePar value)

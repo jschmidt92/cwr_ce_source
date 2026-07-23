@@ -73,6 +73,20 @@ TEST_CASE("NetworkScriptValueCodec rejects malformed payload bytes", "[network][
     REQUIRE(decoded.GetNil());
 }
 
+TEST_CASE("NetworkScriptValueCodec rejects malformed nested array values", "[network][remoteExec][codec]")
+{
+    AutoArray<char> bytes;
+    bytes.Resize(sizeof(int) * 3);
+
+    int* words = reinterpret_cast<int*>(bytes.Data());
+    words[0] = GameArray;
+    words[1] = 1;
+    words[2] = 0x7fffffff;
+
+    GameValue decoded = DecodeScriptValue(bytes, nullptr, nullptr);
+    REQUIRE(decoded.GetNil());
+}
+
 TEST_CASE("RemoteExecTargetSelector codec round-trips nested selector arrays", "[network][remoteExec][codec]")
 {
     RemoteExecTargetSelector scalar;

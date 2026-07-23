@@ -86,6 +86,12 @@ targeted delivery.
 `eventEmitServer`, and `eventEmitTarget`. Scripts can call it directly, but
 normal mission code should usually use the emit helpers.
 
+Treat server-scoped events as a trust boundary. A client can request any
+registered server event name through the event transport, so server handlers must
+authorize the sender and validate the payload before changing persistent state.
+Use `_this select 3` as the authoritative remote sender DPID; do not trust a
+client-supplied `uid`, player name, or target selector by itself.
+
 ## Scopes
 
 The scope is a string, so systems can define their own scope names. The engine
@@ -217,6 +223,9 @@ uid = jsonGet [state, "uid"]
 cacheSet ["actor", uid, state]
 cacheFlush ["actor", uid]
 ```
+
+For production persistence, derive or verify `uid` from the sender on the server
+before saving. The example keeps the payload small for readability.
 
 ## Targeted Client Reply
 
