@@ -117,8 +117,18 @@ RString StripLeadingSlash(RString value)
     return value;
 }
 
+RString StripTrailingSlash(RString value)
+{
+    if (value.GetLength() > 0 && (value[value.GetLength() - 1] == '\\' || value[value.GetLength() - 1] == '/'))
+    {
+        return value.Substring(0, value.GetLength() - 1);
+    }
+    return value;
+}
+
 RString LeafName(RString value)
 {
+    value = StripTrailingSlash(value);
     for (int i = value.GetLength() - 1; i >= 0; --i)
     {
         if (value[i] == '\\' || value[i] == '/')
@@ -127,6 +137,52 @@ RString LeafName(RString value)
         }
     }
     return value;
+}
+
+RString JoinPath(RString prefix, RString relative)
+{
+    relative = StripLeadingSlash(relative);
+    if (prefix.GetLength() == 0)
+    {
+        return relative;
+    }
+    if (prefix[prefix.GetLength() - 1] == '\\' || prefix[prefix.GetLength() - 1] == '/')
+    {
+        return prefix + relative;
+    }
+    return prefix + RString("\\") + relative;
+}
+
+bool EqualsNoCase(RString left, RString right)
+{
+    left.Lower();
+    right.Lower();
+    return strcmp(left.Data(), right.Data()) == 0;
+}
+
+RString StripMatchingAddonRoot(RString source, RString addonPrefix)
+{
+    source = StripLeadingSlash(source);
+    const RString addonName = LeafName(addonPrefix);
+    if (addonName.GetLength() == 0)
+    {
+        return source;
+    }
+
+    for (int i = 0; i < source.GetLength(); ++i)
+    {
+        if (source[i] == '\\' || source[i] == '/')
+        {
+            const RString firstComponent = source.Substring(0, i);
+            if (EqualsNoCase(firstComponent, addonName))
+            {
+                return source.Substring(i + 1, source.GetLength());
+            }
+            return source;
+        }
+    }
+
+    return EqualsNoCase(source, addonName) ? RString() : source;
 }
 
 bool ReadExistingFunctionFile(RString source, RString& body)
@@ -323,7 +379,10 @@ bool StoreFunction(const GameState* state, const std::string& name, FunctionLife
         ScriptFunctions().push_back(function);
     }
 
-    BindActiveFunctionVariable(state, key);
+    if (state)
+    {
+        BindActiveFunctionVariable(state, key);
+    }
     return true;
 }
 
@@ -377,8 +436,16 @@ bool ReadAddonFunctionFile(RString source, RString addonPrefix, RString& body)
     }
 
     source = StripLeadingSlash(source);
-    RString leaf = LeafName(source);
-    RString candidates[] = {addonPrefix + source, addonPrefix + leaf, source, leaf};
+    const RString strippedSource = StripMatchingAddonRoot(source, addonPrefix);
+    const RString leaf = LeafName(source);
+    RString candidates[] = {
+        JoinPath(addonPrefix, source),
+        JoinPath(addonPrefix, strippedSource),
+        JoinPath(addonPrefix, leaf),
+        source,
+        strippedSource,
+        leaf,
+    };
     for (const RString& candidate : candidates)
     {
         if (ReadExistingFunctionFile(candidate, body))
@@ -406,6 +473,42 @@ void ClearScriptFunctions(const GameState* state)
 void ClearAddonScriptFunctions(const GameState* state)
 {
     ClearFunctionsByLifetime(state, FunctionLifetime::Addon);
+}
+
+bool RegisterAddonScriptFunction(const GameState* state, RString name, RString source, RString addonPrefix)
+{
+    if (name.GetLength() == 0 || source.GetLength() == 0)
+    {
+        return false;
+    }
+
+    RString body;
+    if (!ReadAddonFunctionFile(source, addonPrefix, body))
+    {
+        return false;
+    }
+    return StoreFunction(state, name.Data(), FunctionLifetime::Addon, "file", source, body);
+}
+
+void RebindScriptFunctions(const GameState* state)
+{
+    if (!state)
+    {
+        return;
+    }
+
+    std::vector<std::string> changedKeys;
+    for (const ScriptFunction& function : ScriptFunctions())
+    {
+        if (!KeyAlreadyQueued(changedKeys, function.key))
+        {
+            changedKeys.push_back(function.key);
+        }
+    }
+    for (const std::string& key : changedKeys)
+    {
+        BindActiveFunctionVariable(state, key);
+    }
 }
 } // namespace Poseidon
 

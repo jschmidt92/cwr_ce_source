@@ -2,10 +2,12 @@
 #include <Poseidon/Asset/Addon/AddonSystem.hpp>
 #include <Poseidon/Asset/Addon/AddonInfo.hpp>
 #include <Poseidon/Core/ModSystem.hpp>
+#include <Poseidon/Game/Commands/GameStateExtCommon.hpp>
 #include <Poseidon/IO/FileServer.hpp>
 #include <Poseidon/IO/ParamFile/ParamFile.hpp>
 #include <Poseidon/IO/Streams/QBStream.hpp>
 #include <Poseidon/UI/Locale/Stringtable/Stringtable.hpp>
+#include <Poseidon/World/World.hpp>
 #include <Poseidon/Foundation/Types/Pointers.hpp>
 #include <filesystem>
 #include <string>
@@ -27,6 +29,7 @@ extern Poseidon::ParamFile Pars;
 namespace Poseidon
 {
 void ClearAddonLifecycleHandlers();
+void ClearAddonScriptFunctions(const GameState* state);
 int RegisterAddonLifecycleHandler(const char* addon, const char* phase, RString body, bool inlineCode);
 int RegisterAddonLifecycleHandler(const char* addon, const char* phase, RString body, bool inlineCode,
                                   RString addonPrefix);
@@ -122,6 +125,150 @@ RString GetConfigAddonPrefix(const ParamEntry& config)
 
     const AddonInfo* info = AddonSystem::FindAddonInfo(addonName);
     return info ? info->GetPrefix() : RString();
+}
+
+RString GetTextValue(const ParamEntry& config, const char* name, RString fallback = RString())
+{
+    const ParamEntry* entry = config.FindEntry(name);
+    if (!entry || !entry->IsTextValue())
+    {
+        return fallback;
+    }
+    return entry->GetValue();
+}
+
+bool GetIntValue(const ParamEntry& config, const char* name, int& value)
+{
+    const ParamEntry* entry = config.FindEntry(name);
+    if (!entry)
+    {
+        return false;
+    }
+    value = entry->GetInt();
+    return true;
+}
+
+RString JoinFunctionPath(RString dir, RString file)
+{
+    if (dir.GetLength() == 0)
+    {
+        return file;
+    }
+    if (file.GetLength() == 0)
+    {
+        return dir;
+    }
+
+    const char last = dir[dir.GetLength() - 1];
+    if (last == '\\' || last == '/')
+    {
+        return dir + file;
+    }
+    return dir + RString("\\") + file;
+}
+
+RString FunctionClassFileName(const ParamEntry& functionClass)
+{
+    RString fileName = GetTextValue(functionClass, "file");
+    if (fileName.GetLength() > 0)
+    {
+        return fileName;
+    }
+    return RString("fn_") + functionClass.GetName() + RString(".sqf");
+}
+
+RString BuildFunctionName(RString tag, RString functionName)
+{
+    return tag + RString("_fnc_") + functionName;
+}
+
+RString GetAddonNameFromRoot(const ParamEntry& root)
+{
+    const ParamEntry* cfg = root.FindEntry("CfgPatches");
+    if (!cfg)
+    {
+        return RString();
+    }
+    for (int i = 0; i < cfg->GetEntryCount(); ++i)
+    {
+        const ParamEntry& entry = cfg->GetEntry(i);
+        if (entry.IsClass())
+        {
+            return entry.GetName();
+        }
+    }
+    return RString();
+}
+
+void RegisterAddonFunctionConfig(const ParamEntry& root)
+{
+    const ParamEntry* cfgFunctions = root.FindEntry("CfgFunctions");
+    if (!cfgFunctions)
+    {
+        return;
+    }
+
+    const RString addonPrefix = GetConfigAddonPrefix(root);
+    if (addonPrefix.GetLength() == 0)
+    {
+        LOG_WARN(Config, "CfgFunctions in addon '{}' has no addon prefix", (const char*)GetAddonNameFromRoot(root));
+    }
+
+    for (int tagIndex = 0; tagIndex < cfgFunctions->GetEntryCount(); ++tagIndex)
+    {
+        const ParamEntry& tagClass = cfgFunctions->GetEntry(tagIndex);
+        if (!tagClass.IsClass())
+        {
+            continue;
+        }
+
+        RString tag = GetTextValue(tagClass, "tag", tagClass.GetName());
+        RString tagFile = GetTextValue(tagClass, "file");
+        int tagRecompile = 0;
+        GetIntValue(tagClass, "recompile", tagRecompile);
+
+        for (int categoryIndex = 0; categoryIndex < tagClass.GetEntryCount(); ++categoryIndex)
+        {
+            const ParamEntry& categoryClass = tagClass.GetEntry(categoryIndex);
+            if (!categoryClass.IsClass())
+            {
+                continue;
+            }
+
+            RString categoryFile = GetTextValue(categoryClass, "file", tagFile);
+            int categoryRecompile = tagRecompile;
+            GetIntValue(categoryClass, "recompile", categoryRecompile);
+
+            for (int functionIndex = 0; functionIndex < categoryClass.GetEntryCount(); ++functionIndex)
+            {
+                const ParamEntry& functionClass = categoryClass.GetEntry(functionIndex);
+                if (!functionClass.IsClass())
+                {
+                    continue;
+                }
+
+                int functionRecompile = categoryRecompile;
+                GetIntValue(functionClass, "recompile", functionRecompile);
+                if (functionRecompile)
+                {
+                    LOG_WARN(Config, "CfgFunctions recompile ignored for {}_fnc_{}", (const char*)tag,
+                             (const char*)functionClass.GetName());
+                }
+
+                const RString source = JoinFunctionPath(categoryFile, FunctionClassFileName(functionClass));
+                const RString name = BuildFunctionName(tag, functionClass.GetName());
+                if (!RegisterAddonScriptFunction(GWorld ? GWorld->GetGameState() : nullptr, name, source, addonPrefix))
+                {
+                    LOG_WARN(Config, "CfgFunctions failed to register {} from '{}'", (const char*)name,
+                             (const char*)source);
+                }
+                else
+                {
+                    LOG_DEBUG(Config, "CfgFunctions registered {} from '{}'", (const char*)name, (const char*)source);
+                }
+            }
+        }
+    }
 }
 
 void RegisterAddonLifecycleConfigValue(const ParamEntry& handlerClass, const char* valueName, const char* phase,
@@ -486,11 +633,14 @@ void AddonSystem::ParseAllAddonConfigs()
     }
 
     Pars.SetFile(&Pars);
+    ClearAddonScriptFunctions(GWorld ? GWorld->GetGameState() : nullptr);
     ClearAddonLifecycleHandlers();
     for (int i = 0; i < resolved.Size(); i++)
     {
+        RegisterAddonFunctionConfig(*resolved[i].addon);
         RegisterAddonLifecycleConfig(*resolved[i].addon);
     }
+    RebindScriptFunctions(GWorld ? GWorld->GetGameState() : nullptr);
 }
 
 void AddonSystem::ClearAddonConfigs()

@@ -74,6 +74,7 @@ void ShowCinemaBorder(bool show);
 void ClearScriptEventHandlers();
 void ClearMissionPhaseHandlers();
 void ClearScriptFunctions(const class ::GameState* state);
+void RebindScriptFunctions(const class ::GameState* state);
 int RunMissionPhase(const char* phase, const class ::GameValue& argument);
 
 int GetNetworkPort();
@@ -186,6 +187,7 @@ void RunInitScript()
     Poseidon::ClearScriptEventHandlers();
     Poseidon::ClearMissionPhaseHandlers();
     Poseidon::ClearScriptFunctions(GWorld ? GWorld->GetGameState() : nullptr);
+    Poseidon::RebindScriptFunctions(GWorld ? GWorld->GetGameState() : nullptr);
     Poseidon::RunMissionPhase("preInit", GameValue());
     RunScopedLifecyclePhases("serverPreInit", "playerLocalPreInit");
 

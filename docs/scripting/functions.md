@@ -47,6 +47,53 @@ functionRegister ["IDS_fnc_loadActor", "functions\actors\fn_loadActor.sqf"]
 [player] call IDS_fnc_loadActor
 ```
 
+## Addon Config
+
+Addons can auto-register file-backed functions with `CfgFunctions`:
+
+```cpp
+class CfgFunctions {
+  class IDS {
+    class Actors {
+      file = "ids_core\functions\actors";
+      class loadActor {};
+      class saveActor {};
+    };
+  };
+};
+```
+
+This registers addon-scoped functions named:
+
+```sqf
+IDS_fnc_loadActor
+IDS_fnc_saveActor
+```
+
+The default file for a function class is `fn_<class>.sqf` under the nearest
+`file` folder, so the example loads:
+
+```text
+ids_core\functions\actors\fn_loadActor.sqf
+ids_core\functions\actors\fn_saveActor.sqf
+```
+
+A function class can override its file:
+
+```cpp
+class CfgFunctions {
+  class IDS {
+    class Actors {
+      file = "ids_core\functions\actors";
+      class loadActor { file = "fn_actorLoad.sqf"; };
+    };
+  };
+};
+```
+
+`CfgFunctions` is parsed before addon lifecycle/XEH handlers are dispatched, so
+functions declared in config can be called from addon `preInit`.
+
 `spawn` schedules code on the world script runner and returns a numeric script
 id:
 
@@ -87,6 +134,5 @@ addon-scoped functions.
 
 Mission-scoped functions are cleared at mission init. Addon-scoped functions
 remain registered across mission changes until the addon layer is explicitly
-cleared or unregistered. Future config discovery can populate addon functions
-from addon configs and mission functions from `description.ext` before mission
-scripts run.
+cleared or unregistered. Addon `CfgFunctions` entries are reloaded from addon
+config when addon configs are parsed.

@@ -91,6 +91,9 @@ argument = _this select 1
 Addon lifecycle handlers are not cleared by mission init. They are populated
 from addon config when addons are loaded.
 
+Addon `CfgFunctions` entries are registered before lifecycle handlers dispatch,
+so functions declared in config are available from addon `preInit` scripts.
+
 ## XEH Bootstrap Pattern
 
 The mission can stay focused on mission-specific setup. It does not need to

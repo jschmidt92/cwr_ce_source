@@ -49,6 +49,8 @@ namespace Poseidon
 {
 RString CurrentAddonLifecyclePrefix();
 bool ReadAddonFunctionFile(RString source, RString addonPrefix, RString& body);
+bool RegisterAddonScriptFunction(const GameState* state, RString name, RString source, RString addonPrefix);
+void RebindScriptFunctions(const GameState* state);
 GameValue PoolAddWeapon(const GameState* state, GameValuePar oper1);
 GameValue PoolAddMagazine(const GameState* state, GameValuePar oper1);
 GameValue PoolGetWeapons(const GameState* state, GameValuePar oper1);

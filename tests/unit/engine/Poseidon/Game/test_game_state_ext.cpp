@@ -47,6 +47,7 @@ void ClearScriptEventHandlers();
 void ClearMissionPhaseHandlers();
 void ClearAddonLifecycleHandlers();
 int RunMissionPhaseForState(GameState* state, const char* phase, GameValuePar argument);
+void RebindScriptFunctions(const GameState* state);
 } // namespace Poseidon
 
 namespace Poseidon
@@ -939,6 +940,86 @@ TEST_CASE("addon function file loading resolves addon root script files", "[game
     REQUIRE(Poseidon::ReadAddonFunctionFile(RString("unit_test\\fn_testAdd.sqf"), RString(prefix.c_str()), body));
     REQUIRE(std::string(body.Data()) == "(_this select 0) + 1");
 
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE("addon function file loading strips duplicated addon folder prefixes",
+          "[game][gameStateExt][functions]")
+{
+    const auto root = std::filesystem::temp_directory_path() / "poseidon_addon_function_nested_config";
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root / "functions");
+
+    {
+        std::ofstream function(root / "functions" / "fn_testAdd.sqf", std::ios::binary);
+        REQUIRE(function.is_open());
+        function << "(_this select 0) + 1";
+    }
+
+    std::string prefix = root.string();
+    prefix.push_back(std::filesystem::path::preferred_separator);
+    RString body;
+    REQUIRE(Poseidon::ReadAddonFunctionFile(RString("poseidon_addon_function_nested_config\\functions\\fn_testAdd.sqf"),
+                                            RString(prefix.c_str()), body));
+    REQUIRE(std::string(body.Data()) == "(_this select 0) + 1");
+
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST_CASE("addon configs populate CfgFunctions as addon script functions",
+          "[game][gameStateExt][functions][addons]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+    Poseidon::AddonSystem::ClearRegistry();
+    Poseidon::AddonSystem::ClearAddonConfigs();
+    FunctionClear(&GGameState);
+    FunctionClearAddon(&GGameState);
+
+    const auto root = std::filesystem::temp_directory_path() / "poseidon_addon_cfgfunctions_config";
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root / "functions" / "math");
+
+    {
+        std::ofstream config(root / "config.cpp", std::ios::binary);
+        REQUIRE(config.is_open());
+        config << "class CfgPatches{class UnitTestFunctionAddon{units[]={};weapons[]={};requiredVersion=1.0;};};\n";
+        config << "class CfgFunctions{class TST{class Math{file=\"functions\\\\math\";class addOne{};class addTwo{file=\"fn_addTwo.sqf\";};};};};\n";
+    }
+    {
+        std::ofstream function(root / "functions" / "math" / "fn_addOne.sqf", std::ios::binary);
+        REQUIRE(function.is_open());
+        function << "(_this select 0) + 1";
+    }
+    {
+        std::ofstream function(root / "functions" / "math" / "fn_addTwo.sqf", std::ios::binary);
+        REQUIRE(function.is_open());
+        function << "(_this select 0) + 2";
+    }
+
+    std::string prefix = root.string();
+    prefix.push_back(std::filesystem::path::preferred_separator);
+    REQUIRE(Poseidon::AddonSystem::ParseAddonConfig(prefix.c_str()));
+    Poseidon::AddonSystem::ParseAllAddonConfigs();
+    Poseidon::RebindScriptFunctions(&GGameState);
+
+    REQUIRE((bool)FunctionExists(&GGameState, GameValue("TST_fnc_addOne")));
+    REQUIRE((bool)FunctionExists(&GGameState, GameValue("TST_fnc_addTwo")));
+    REQUIRE(static_cast<GameScalarType>(GGameState.EvaluateMultiple("[41] call TST_fnc_addOne")) == 42.0f);
+    REQUIRE(static_cast<GameScalarType>(GGameState.EvaluateMultiple("[41] call TST_fnc_addTwo")) == 43.0f);
+
+    GameValue infoValue = FunctionGet(&GGameState, GameValue("TST_fnc_addOne"));
+    const GameArrayType& info = infoValue;
+    REQUIRE(info.Size() == 5);
+    REQUIRE(strcmp(((GameStringType)info[1]).Data(), "addon") == 0);
+    REQUIRE(strcmp(((GameStringType)info[2]).Data(), "file") == 0);
+
+    FunctionClear(&GGameState);
+    FunctionClearAddon(&GGameState);
+    Poseidon::AddonSystem::ClearAddonConfigs();
+    Poseidon::AddonSystem::ClearRegistry();
     std::filesystem::remove_all(root, ec);
 }
 
