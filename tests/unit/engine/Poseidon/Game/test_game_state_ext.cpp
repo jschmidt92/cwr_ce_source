@@ -822,6 +822,7 @@ TEST_CASE("addon configs populate lifecycle handlers from Extended event handler
         config << "class Extended_PreInit_EventHandlers{class unit_test_lifecycle{init=\"unit_test\\XEH_preInit.sqf\";serverInit=\"unit_test\\XEH_serverPreInit.sqf\";clientInit=\"unit_test\\XEH_clientPreInit.sqf\";};};\n";
         config << "class Extended_PostInit_EventHandlers{class unit_test_lifecycle{init=\"triRecordRemoteExec [1]\";serverInit=\"unit_test\\XEH_serverPostInit.sqf\";clientInit=\"unit_test\\XEH_clientPostInit.sqf\";};};\n";
         config << "class Extended_ServerInit_EventHandlers{class unit_test_server{init=\"unit_test\\XEH_server.sqs\";};};\n";
+        config << "class Extended_Respawn_EventHandlers{class unit_test_respawn{init=\"unit_test\\XEH_respawn.sqf\";};};\n";
     }
 
     std::string prefix = root.string();
@@ -831,7 +832,7 @@ TEST_CASE("addon configs populate lifecycle handlers from Extended event handler
 
     GameValue listValue = AddonLifecycleList(&GGameState);
     const GameArrayType& list = listValue;
-    REQUIRE(list.Size() == 7);
+    REQUIRE(list.Size() == 8);
 
     bool foundPreInit = false;
     bool foundPreInitServer = false;
@@ -840,6 +841,7 @@ TEST_CASE("addon configs populate lifecycle handlers from Extended event handler
     bool foundPostInitServer = false;
     bool foundPostInitClient = false;
     bool foundServerInit = false;
+    bool foundRespawn = false;
     for (int i = 0; i < list.Size(); ++i)
     {
         const GameArrayType& info = list[i];
@@ -889,6 +891,12 @@ TEST_CASE("addon configs populate lifecycle handlers from Extended event handler
             REQUIRE(type == "script");
             REQUIRE(body == "unit_test\\XEH_server.sqs");
         }
+        if (addon == "unit_test_respawn" && phase == "playerLocalRespawn")
+        {
+            foundRespawn = true;
+            REQUIRE(type == "script");
+            REQUIRE(body == "unit_test\\XEH_respawn.sqf");
+        }
     }
 
     REQUIRE(foundPreInit);
@@ -898,6 +906,7 @@ TEST_CASE("addon configs populate lifecycle handlers from Extended event handler
     REQUIRE(foundPostInitServer);
     REQUIRE(foundPostInitClient);
     REQUIRE(foundServerInit);
+    REQUIRE(foundRespawn);
 
     Poseidon::AddonSystem::ClearAddonConfigs();
     Poseidon::AddonSystem::ClearRegistry();

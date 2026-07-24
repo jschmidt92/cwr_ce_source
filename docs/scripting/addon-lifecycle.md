@@ -50,6 +50,7 @@ Supported classes:
 - `Extended_ServerPostInit_EventHandlers`
 - `Extended_PlayerLocalInit_EventHandlers`
 - `Extended_PlayerLocalPostInit_EventHandlers`
+- `Extended_Respawn_EventHandlers`
 - `Extended_PlayerServerInit_EventHandlers`
 - `Extended_JIPInit_EventHandlers`
 
@@ -76,6 +77,11 @@ postInit
 serverPostInit / playerLocalPostInit
 ```
 
+`Extended_Respawn_EventHandlers` maps `init` and `clientInit` to
+`playerLocalRespawn`. It fires on the client after the engine selects the
+respawned player object, which lets addons reattach player-object actions or
+other local state.
+
 ## Dispatch
 
 When a phase fires, addon lifecycle handlers run from the internal engine-owned
@@ -86,6 +92,13 @@ Each handler receives the normal mission phase `_this` payload:
 ```sqf
 phase = _this select 0
 argument = _this select 1
+```
+
+For `playerLocalRespawn`, `argument` is an array containing the selected
+respawned player object:
+
+```sqf
+newPlayer = (argument select 0)
 ```
 
 Addon lifecycle handlers are not cleared by mission init. They are populated

@@ -53,6 +53,8 @@ Multiplayer role phases:
 - `playerLocalInit`: before `initPlayerLocal.sqs`.
 - `playerServerInit`: before `initPlayerServer.sqs` for a JIP player.
 - `jipInit`: before `initJIP.sqs` on a joining client.
+- `playerLocalRespawn`: client/player-local phase after the engine selects a
+  respawned player object. The phase argument is `[newPlayer]`.
 
 The multiplayer init files support both legacy `.sqs` and SQF `.sqf` variants.
 When both exist for the same hook, Poseidon runs the legacy `.sqs` file first
