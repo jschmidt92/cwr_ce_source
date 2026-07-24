@@ -78,6 +78,7 @@ namespace Poseidon
 void SetMission(RString, RString, RString);
 RString& GetMPMissionsDir();
 void SetBaseDirectory(RString);
+int RunMissionPhase(const char* phase, const class ::GameValue& argument);
 } // namespace Poseidon
 
 using Poseidon::Foundation::MemAllocSA;
@@ -89,6 +90,13 @@ int NextRemoteExecSequence()
 {
     static int sequence = 0;
     return ++sequence;
+}
+
+GameValue MakePlayerLocalRespawnArgs(Person* person)
+{
+    GameArrayType arguments;
+    arguments.Add(GameValueExt(person));
+    return GameValue(arguments);
 }
 } // namespace
 using Poseidon::Foundation::Time;
@@ -590,6 +598,7 @@ void NetworkClient::SelectPlayer(int player, Person* person, bool respawn)
                 Script* script = new Script(name, GameValue(arguments));
                 GWorld->StartCameraScript(script);
             }
+            Poseidon::RunMissionPhase("playerLocalRespawn", MakePlayerLocalRespawnArgs(person));
         }
     }
 }

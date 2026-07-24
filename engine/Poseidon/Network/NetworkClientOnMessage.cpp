@@ -95,6 +95,16 @@ RString GetUserParams();
 unsigned GTriNetSoundsReceived = 0;
 } // namespace Poseidon
 
+namespace
+{
+GameValue MakePlayerLocalRespawnArgs(Person* person)
+{
+    GameArrayType arguments;
+    arguments.Add(GameValueExt(person));
+    return GameValue(arguments);
+}
+} // namespace
+
 // NetworkClient::OnMessage and its helpers, split out of NetworkClient.cpp
 // to keep that translation unit under the size threshold.
 extern const char* GameStateNames[];
@@ -403,6 +413,10 @@ bool NetworkClient::TryApplySelectPlayer(const SelectPlayerMessage& pl, bool all
             Script* script = new Script(name, GameValue(arguments));
             GWorld->StartCameraScript(script);
         }
+    }
+    if (pl.respawn)
+    {
+        Poseidon::RunMissionPhase("playerLocalRespawn", MakePlayerLocalRespawnArgs(selectedPerson.GetLink()));
     }
     _pendingSelectPlayer = false;
     return true;

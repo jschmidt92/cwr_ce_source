@@ -55,6 +55,7 @@ const AddonLifecycleClass AddonLifecycleClasses[] = {
     {"Extended_ServerPostInit_EventHandlers", "serverPostInit", "serverPostInit", nullptr},
     {"Extended_PlayerLocalInit_EventHandlers", "playerLocalInit", nullptr, "playerLocalInit"},
     {"Extended_PlayerLocalPostInit_EventHandlers", "playerLocalPostInit", nullptr, "playerLocalPostInit"},
+    {"Extended_Respawn_EventHandlers", "playerLocalRespawn", nullptr, "playerLocalRespawn"},
     {"Extended_PlayerServerInit_EventHandlers", "playerServerInit", "playerServerInit", nullptr},
     {"Extended_JIPInit_EventHandlers", "jipInit", nullptr, "jipInit"},
 };
