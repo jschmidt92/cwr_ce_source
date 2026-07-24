@@ -89,8 +89,9 @@ normal mission code should usually use the emit helpers.
 Treat server-scoped events as a trust boundary. A client can request any
 registered server event name through the event transport, so server handlers must
 authorize the sender and validate the payload before changing persistent state.
-Use `_this select 3` as the authoritative remote sender DPID; do not trust a
-client-supplied `uid`, player name, or target selector by itself.
+Use `_this select 3` as the authoritative remote sender DPID and resolve it with
+`playerUidById`; do not trust a client-supplied `uid`, player name, or target
+selector by itself.
 
 ## Scopes
 
@@ -218,14 +219,15 @@ name = _this select 1
 state = _this select 2
 sender = _this select 3
 
-uid = jsonGet [state, "uid"]
+uid = playerUidById sender
+state = jsonSet [state, "uid", uid]
 
 cacheSet ["actor", uid, state]
 cacheFlush ["actor", uid]
 ```
 
-For production persistence, derive or verify `uid` from the sender on the server
-before saving. The example keeps the payload small for readability.
+`sender` is the remote DPID string supplied by the event transport. `playerUidById`
+converts it to the stable multiplayer identity stored in `PlayerIdentity.id`.
 
 ## Targeted Client Reply
 
@@ -244,7 +246,7 @@ eventOn ["server", "actorLoadRequested", {
   payload = _this select 2
   sender = _this select 3
 
-  uid = jsonGet [payload, "uid"]
+  uid = playerUidById sender
   state = dbLoad ["actor", uid]
   reply = jsonObject [["uid", uid], ["state", state]]
 

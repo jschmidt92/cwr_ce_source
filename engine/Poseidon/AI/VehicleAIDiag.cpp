@@ -1247,6 +1247,7 @@ LSError UserActionDescription::Serialize(ParamArchive& ar)
     PARAM_CHECK(ar.Serialize("id", id, 1))
     PARAM_CHECK(ar.Serialize("text", text, 1, ""))
     PARAM_CHECK(ar.Serialize("script", script, 1, ""))
+    PARAM_CHECK(ar.Serialize("inlineCode", inlineCode, 1, false))
 
     return LSOK;
 }

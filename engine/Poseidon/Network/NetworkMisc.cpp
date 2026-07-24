@@ -1717,26 +1717,28 @@ const PlayerRole* NetworkManager::GetMyPlayerRole() const
 
 const PlayerIdentity* NetworkManager::FindIdentity(int dpnid) const
 {
+    if (_server)
+    {
+        return _server->FindIdentity(dpnid);
+    }
     if (_client)
     {
         return _client->FindIdentity(dpnid);
     }
-    else
-    {
-        return nullptr;
-    }
+    return nullptr;
 }
 
 const AutoArray<PlayerIdentity>* NetworkManager::GetIdentities() const
 {
+    if (_server)
+    {
+        return _server->GetIdentities();
+    }
     if (_client)
     {
         return _client->GetIdentities();
     }
-    else
-    {
-        return nullptr;
-    }
+    return nullptr;
 }
 
 void NetworkManager::GetTransferStats(int& curBytes, int& totBytes)

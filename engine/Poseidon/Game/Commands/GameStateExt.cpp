@@ -445,6 +445,7 @@ GameValue WorldSize(const GameState* state);
 GameValue LocalDbRoot(const GameState* state);
 GameValue LocalDbCacheClear(const GameState* state);
 GameValue LocalDbCacheFlushAll(const GameState* state);
+GameValue PlayerUid(const GameState* state);
 
 // Unary functions
 GameValue BriefingOnGear(const GameState* state, GameValuePar oper1);
@@ -458,6 +459,7 @@ GameValue CamDestroy(const GameState* state, GameValuePar oper1);
 GameValue CenterCreate(const GameState* state, GameValuePar oper1);
 GameValue CenterDelete(const GameState* state, GameValuePar oper1);
 GameValue ConfigLoad(const GameState* state, GameValuePar oper1);
+GameValue PlayerUidById(const GameState* state, GameValuePar oper1);
 GameValue CtrlEnable(const GameState* state, GameValuePar oper1);
 GameValue CtrlEnabled(const GameState* state, GameValuePar oper1);
 GameValue CtrlGetText(const GameState* state, GameValuePar oper1);
@@ -993,6 +995,7 @@ static const GameNular* GetExtNular(int& count)
         GameNular(GameFile, "newConfig", ConfigNew),
         GameNular(GameArray, "listConfigNames", ConfigListNames),
         GameNular(GameString, "dbRoot", LocalDbRoot),
+        GameNular(GameString, "playerUid", PlayerUid),
         GameNular(GameString, "missionName", MissionName),
         GameNular(GameArray, "missionStart", MissionStart),
         GameNular(GameString, "getWorld", WorldName),
@@ -1035,6 +1038,8 @@ static const GameFunction* GetExtUnary(int& count)
         GameFunction(GameString, "lifeState", ObjLifeState, GameObject),
         GameFunction(GameBool, "local", ObjIsLocal, GameObject),
         GameFunction(GameBool, "requiredVersion", RequiredVersion, GameString),
+        GameFunction(GameString, "playerUidById", PlayerUidById, GameScalar),
+        GameFunction(GameString, "playerUidById", PlayerUidById, GameString),
         GameFunction(GameArray, "getPos", ObjGetPos, GameObject),
         GameFunction(GameArray, "position", ObjGetPos, GameObject),
         GameFunction(GameArray, "getPosASL", ObjGetPosASL, GameObject),

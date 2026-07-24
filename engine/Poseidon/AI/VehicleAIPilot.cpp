@@ -1068,8 +1068,21 @@ void EntityAI::PerformAction(const UIAction& action, AIUnit* unit)
                     arguments.Add(GameValueExt(this));
                     arguments.Add(GameValueExt(unit->GetPerson()));
                     arguments.Add(GameValue((float)desc->id));
-                    Script* script = new Script(desc->script, GameValue(arguments));
-                    GWorld->AddScript(script);
+                    GameValue args(arguments);
+                    if (desc->inlineCode)
+                    {
+                        GameState* gstate = GWorld->GetGameState();
+                        GameVarSpace local(gstate->GetContext());
+                        gstate->BeginContext(&local);
+                        gstate->VarSetLocal("_this", args, true);
+                        gstate->EvaluateMultiple(desc->script);
+                        gstate->EndContext();
+                    }
+                    else
+                    {
+                        Script* script = new Script(desc->script, args);
+                        GWorld->AddScript(script);
+                    }
                 }
             }
             return;
@@ -1447,16 +1460,18 @@ void EntityAI::GetActions(UIActions& actions, AIUnit* unit, bool now)
 
 /*!
     \param text displayed text of action
-    \param script this script will be performed when action is activated
+    \param script this script or code body will be performed when action is activated
+    \param inlineCode true when script contains an SQF code body instead of a script filename
     \return id of action
 */
-int EntityAI::AddUserAction(RString text, RString script)
+int EntityAI::AddUserAction(RString text, RString script, bool inlineCode)
 {
     int index = _userActions.Add();
     UserActionDescription& action = _userActions[index];
     action.id = _nextUserActionId++;
     action.text = text;
     action.script = script;
+    action.inlineCode = inlineCode;
     return action.id;
 }
 

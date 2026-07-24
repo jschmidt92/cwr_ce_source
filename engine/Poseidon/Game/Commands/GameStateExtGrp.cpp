@@ -1429,12 +1429,12 @@ GameValue VehAddUserAction(const GameState* state, GameValuePar oper1, GameValue
         state->TypeError(GameString, array[0].GetType());
         return -1.0f;
     }
-    if (array[1].GetType() != GameString)
+    if (array[1].GetType() != GameString && array[1].GetType() != GameCode)
     {
-        state->TypeError(GameString, array[1].GetType());
+        state->TypeError(GameString | GameCode, array[1].GetType());
         return -1.0f;
     }
-    return (float)veh->AddUserAction(array[0], array[1]);
+    return (float)veh->AddUserAction(array[0], (RString)(GameStringType)array[1], array[1].GetType() == GameCode);
 }
 
 GameValue VehRemoveUserAction(const GameState* state, GameValuePar oper1, GameValuePar oper2)

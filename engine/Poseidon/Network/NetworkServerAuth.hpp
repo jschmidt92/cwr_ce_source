@@ -178,10 +178,10 @@ inline bool VoteSelectionComplete(int first, int second, int rest)
 // the call site. Extracted verbatim (operator precedence preserved).
 inline bool RoleSwapAllowed(int currentRolePlayer, int newPlayer, int from, int aiPlayer, int noPlayer)
 {
-    return (currentRolePlayer == aiPlayer || currentRolePlayer == noPlayer) && newPlayer == from ||
-           currentRolePlayer == from && (newPlayer == aiPlayer || newPlayer == noPlayer) ||
-           currentRolePlayer == aiPlayer && newPlayer == noPlayer ||
-           currentRolePlayer == noPlayer && newPlayer == aiPlayer;
+    return ((currentRolePlayer == aiPlayer || currentRolePlayer == noPlayer) && newPlayer == from) ||
+           (currentRolePlayer == from && (newPlayer == aiPlayer || newPlayer == noPlayer)) ||
+           (currentRolePlayer == aiPlayer && newPlayer == noPlayer) ||
+           (currentRolePlayer == noPlayer && newPlayer == aiPlayer);
 }
 
 inline bool RoleSelfRefreshAllowed(int currentRolePlayer, int newPlayer, int from)

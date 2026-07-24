@@ -25,6 +25,7 @@
 #include <Poseidon/Audio/DynSound.hpp>
 #include <Poseidon/World/Scene/Camera/CameraHold.hpp>
 #include <Poseidon/Network/Network.hpp>
+#include <Poseidon/Network/MultiplayerAuth.hpp>
 #include <Poseidon/Network/NetworkScriptValueCodec.hpp>
 #include <Poseidon/Network/WireBounds.hpp>
 #include <Poseidon/Core/resincl.hpp>
@@ -37,8 +38,11 @@
 #include <Poseidon/Foundation/Platform/AppConfig.hpp>
 
 #include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 #include <time.h>
 #include <string.h>
+#include <stdlib.h>
 #include <cmath>
 #include <Poseidon/Foundation/Common/FltOpts.hpp>
 #include <Poseidon/Foundation/Containers/Array.hpp>
@@ -80,6 +84,37 @@ void AddDeadIdentity(RString);
 RString FindScript(RString name);
 RString GetUserDirectory();
 } // namespace Poseidon
+
+static bool ParseNetworkPlayerId(GameValuePar value, int& playerId)
+{
+    if (value.GetType() == GameScalar)
+    {
+        playerId = toInt(static_cast<float>(value));
+        return true;
+    }
+    if (value.GetType() != GameString)
+    {
+        return false;
+    }
+
+    RString textValue = (RString)(GameStringType)value;
+    const char* text = textValue;
+    if (!text || text[0] == '\0')
+    {
+        return false;
+    }
+
+    errno = 0;
+    char* end = nullptr;
+    long parsed = strtol(text, &end, 10);
+    if (errno == ERANGE || end == text || *end != '\0' || parsed < INT_MIN || parsed > INT_MAX)
+    {
+        return false;
+    }
+
+    playerId = static_cast<int>(parsed);
+    return true;
+}
 
 static RString ConfigFullName(RString filename)
 {
@@ -895,6 +930,38 @@ GameValue IsServer(const GameState* state)
 GameValue IsJIP(const GameState* state)
 {
     return GetNetworkManager().IsJIP();
+}
+
+GameValue PlayerUid(const GameState* /*state*/)
+{
+    const int playerId = GetNetworkManager().GetPlayer();
+    if (playerId != 0)
+    {
+        const PlayerIdentity* identity = GetNetworkManager().FindIdentity(playerId);
+        if (identity && identity->id.GetLength() > 0)
+        {
+            return GameValue(identity->id);
+        }
+    }
+
+    return GameValue(GetPublicKey());
+}
+
+GameValue PlayerUidById(const GameState* state, GameValuePar oper1)
+{
+    int playerId = 0;
+    if (!ParseNetworkPlayerId(oper1, playerId))
+    {
+        state->TypeError(GameScalar | GameString, oper1.GetType());
+        return GameValue("");
+    }
+
+    const PlayerIdentity* identity = GetNetworkManager().FindIdentity(playerId);
+    if (!identity || identity->id.GetLength() == 0)
+    {
+        return GameValue("");
+    }
+    return GameValue(identity->id);
 }
 
 GameValue ServerPause(const GameState* state)

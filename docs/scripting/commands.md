@@ -50,6 +50,53 @@ lifeState unit
 
 Returns `"HEALTHY"`, `"INJURED"`, `"UNCONSCIOUS"`, or `"DEAD"`.
 
+## Player Identity
+
+```sqf
+playerUid
+playerUidById senderDpid
+```
+
+`playerUid` returns the local machine's stable multiplayer identity string.
+`playerUidById` resolves a network sender DPID, such as `_this select 3` from a
+server event handler, to that player's stable `PlayerIdentity.id`.
+
+The DPID is session-scoped and should not be used as a database key. Use
+`playerUidById` on the server before saving authoritative multiplayer actor data:
+
+```sqf
+sender = _this select 3
+uid = playerUidById sender
+state = jsonSet [_this select 2, "uid", uid]
+dbSave ["actor", uid, state]
+```
+
+## User Actions
+
+```sqf
+actionId = player addAction ["Save Actor", {[] call IDS_fnc_requestSaveActor}]
+player removeAction actionId
+```
+
+`addAction` accepts either a legacy script filename string or an inline code
+block as its second array item. Code actions receive the same `_this` payload as
+script actions:
+
+```sqf
+[
+  targetObject,
+  callerObject,
+  actionId
+]
+```
+
+String actions are still executed as external scripts, so existing SQS wrappers
+continue to work:
+
+```sqf
+actionId = player addAction ["Save Actor", "save_actor.sqs"]
+```
+
 ## Script Events
 
 See [event-system.md](event-system.md) for `eventOn`, `eventGet`, `eventList`,

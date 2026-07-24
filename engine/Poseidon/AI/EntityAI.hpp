@@ -166,6 +166,7 @@ struct UserActionDescription
 	int id;
 	RString text;
 	RString script;
+	bool inlineCode = false;
 
 	LSError Serialize(ParamArchive &ar);
 };
@@ -453,7 +454,7 @@ class EntityAI: public Entity
 	virtual void StartActionProcessing(const UIAction &action, AIUnit *unit);
 
 	//! Add new user action
-	int AddUserAction(RString text, RString script);
+	int AddUserAction(RString text, RString script, bool inlineCode = false);
 	//! Remove user action
 	void RemoveUserAction(int id);
 	//! Find user action

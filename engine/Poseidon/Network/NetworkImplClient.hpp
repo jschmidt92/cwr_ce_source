@@ -162,6 +162,7 @@ class NetworkClient : public NetworkComponent
     void RemoveUserMessages();
 
     // Hi-level send of message to server
+    using NetworkComponent::SendMsg;
     DWORD SendMsg(NetworkSimpleObject* object, NetMsgFlags dwFlags);
     bool DXSendMsg(int to, NetworkMessageRaw& rawMsg, DWORD& msgID, NetMsgFlags dwFlags) override;
     NetworkMessageFormatBase* GetFormat(/*int client, */ int type) override;

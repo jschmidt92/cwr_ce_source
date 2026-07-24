@@ -92,6 +92,8 @@ GameValue FunctionClearAddon(const GameState* state);
 GameValue FunctionSpawn(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue FunctionScriptDone(const GameState* state, GameValuePar oper1);
 GameValue FunctionTerminate(const GameState* state, GameValuePar oper1);
+GameValue PlayerUid(const GameState* state);
+GameValue PlayerUidById(const GameState* state, GameValuePar oper1);
 GameValue LocalDbAsyncSave(const GameState* state, GameValuePar oper1);
 GameValue LocalDbAsyncLoad(const GameState* state, GameValuePar oper1);
 GameValue LocalDbAsyncRemove(const GameState* state, GameValuePar oper1);
@@ -613,6 +615,25 @@ TEST_CASE("script event receive exposes sender as exact string DPID", "[game][ga
     REQUIRE(strcmp(((GameStringType)GGameState.EvaluateMultiple("triRemoteExecLog")).Data(), "1738003416") == 0);
 
     Poseidon::ClearScriptEventHandlers();
+}
+
+TEST_CASE("player uid commands expose local id and tolerate unknown network ids",
+          "[game][gameStateExt][identity]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+
+    GameValue uid = PlayerUid(&GGameState);
+    REQUIRE(uid.GetType() == GameString);
+    REQUIRE(((GameStringType)uid).GetLength() > 0);
+
+    GameValue missingFromString = PlayerUidById(&GGameState, GameValue("123456"));
+    REQUIRE(missingFromString.GetType() == GameString);
+    REQUIRE(((GameStringType)missingFromString).GetLength() == 0);
+
+    GameValue missingFromScalar = PlayerUidById(&GGameState, GameValue(123456.0f));
+    REQUIRE(missingFromScalar.GetType() == GameString);
+    REQUIRE(((GameStringType)missingFromScalar).GetLength() == 0);
 }
 
 TEST_CASE("mission phase handlers can be listed, removed, and cleared", "[game][gameStateExt][missionPhase]")
