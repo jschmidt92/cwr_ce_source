@@ -442,6 +442,9 @@ GameValue UsedVersion(const GameState* state);
 GameValue VoiceLanguage(const GameState* state);
 GameValue WorldName(const GameState* state);
 GameValue WorldSize(const GameState* state);
+GameValue LocalDbRoot(const GameState* state);
+GameValue LocalDbCacheClear(const GameState* state);
+GameValue LocalDbCacheFlushAll(const GameState* state);
 
 // Unary functions
 GameValue BriefingOnGear(const GameState* state, GameValuePar oper1);
@@ -579,6 +582,36 @@ GameValue ObjWeaponsFromPool(const GameState* state, GameValuePar oper1);
 GameValue PlayMusic(const GameState* state, GameValuePar oper1);
 GameValue PlaySound(const GameState* state, GameValuePar oper1);
 GameValue SoundLength(const GameState* state, GameValuePar oper1);
+GameValue LocalDbSave(const GameState* state, GameValuePar oper1);
+GameValue LocalDbLoad(const GameState* state, GameValuePar oper1);
+GameValue LocalDbRemove(const GameState* state, GameValuePar oper1);
+GameValue LocalDbExists(const GameState* state, GameValuePar oper1);
+GameValue LocalDbList(const GameState* state, GameValuePar oper1);
+GameValue LocalDbFind(const GameState* state, GameValuePar oper1);
+GameValue LocalDbFindPath(const GameState* state, GameValuePar oper1);
+GameValue LocalDbIndex(const GameState* state, GameValuePar oper1);
+GameValue LocalDbIndexPath(const GameState* state, GameValuePar oper1);
+GameValue LocalDbUpdate(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncSave(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncLoad(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncRemove(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncExists(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncList(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncFind(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncFindPath(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncIndex(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncIndexPath(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncDone(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncResult(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncJobs(const GameState* state);
+GameValue LocalDbAsyncClear(const GameState* state, GameValuePar oper1);
+GameValue LocalDbCacheLoad(const GameState* state, GameValuePar oper1);
+GameValue LocalDbCacheGet(const GameState* state, GameValuePar oper1);
+GameValue LocalDbCacheSet(const GameState* state, GameValuePar oper1);
+GameValue LocalDbCacheFlush(const GameState* state, GameValuePar oper1);
+GameValue LocalDbCacheAsyncFlush(const GameState* state, GameValuePar oper1);
+GameValue LocalDbCacheAsyncFlushAll(const GameState* state);
+GameValue LocalDbCacheRemove(const GameState* state, GameValuePar oper1);
 GameValue JsonValid(const GameState* state, GameValuePar oper1);
 GameValue JsonGetString(const GameState* state, GameValuePar oper1);
 GameValue JsonGetNumber(const GameState* state, GameValuePar oper1);
@@ -925,6 +958,7 @@ static const GameNular* GetExtNular(int& count)
 
         GameNular(GameFile, "newConfig", ConfigNew),
         GameNular(GameArray, "listConfigNames", ConfigListNames),
+        GameNular(GameString, "dbRoot", LocalDbRoot),
         GameNular(GameString, "missionName", MissionName),
         GameNular(GameArray, "missionStart", MissionStart),
         GameNular(GameString, "getWorld", WorldName),
@@ -933,6 +967,10 @@ static const GameNular* GetExtNular(int& count)
         GameNular(GameBool, "isJIP", IsJIP),
         GameNular(GameNothing, "serverPause", ServerPause),
         GameNular(GameNothing, "serverResume", ServerResume),
+        GameNular(GameBool, "cacheClear", LocalDbCacheClear),
+        GameNular(GameBool, "cacheFlushAll", LocalDbCacheFlushAll),
+        GameNular(GameScalar, "cacheAsyncFlushAll", LocalDbCacheAsyncFlushAll),
+        GameNular(GameArray, "dbAsyncJobs", LocalDbAsyncJobs),
 
         GameNular(GameScalar, "worldSize", WorldSize),
         GameNular(GameScalar, "mapWidth", MapWidth),
@@ -1073,6 +1111,34 @@ static const GameFunction* GetExtUnary(int& count)
 
         GameFunction(GameString, "format", StrFormat, GameArray),
         GameFunction(GameString, "localize", StrLocalize, GameString),
+        GameFunction(GameBool, "dbSave", LocalDbSave, GameArray),
+        GameFunction(GameString, "dbLoad", LocalDbLoad, GameArray),
+        GameFunction(GameBool, "dbRemove", LocalDbRemove, GameArray),
+        GameFunction(GameBool, "dbExists", LocalDbExists, GameArray),
+        GameFunction(GameArray, "dbList", LocalDbList, GameString),
+        GameFunction(GameArray, "dbFind", LocalDbFind, GameArray),
+        GameFunction(GameArray, "dbFindPath", LocalDbFindPath, GameArray),
+        GameFunction(GameArray, "dbIndex", LocalDbIndex, GameArray),
+        GameFunction(GameArray, "dbIndexPath", LocalDbIndexPath, GameArray),
+        GameFunction(GameBool, "dbUpdate", LocalDbUpdate, GameArray),
+        GameFunction(GameScalar, "dbAsyncSave", LocalDbAsyncSave, GameArray),
+        GameFunction(GameScalar, "dbAsyncLoad", LocalDbAsyncLoad, GameArray),
+        GameFunction(GameScalar, "dbAsyncRemove", LocalDbAsyncRemove, GameArray),
+        GameFunction(GameScalar, "dbAsyncExists", LocalDbAsyncExists, GameArray),
+        GameFunction(GameScalar, "dbAsyncList", LocalDbAsyncList, GameString),
+        GameFunction(GameScalar, "dbAsyncFind", LocalDbAsyncFind, GameArray),
+        GameFunction(GameScalar, "dbAsyncFindPath", LocalDbAsyncFindPath, GameArray),
+        GameFunction(GameScalar, "dbAsyncIndex", LocalDbAsyncIndex, GameArray),
+        GameFunction(GameScalar, "dbAsyncIndexPath", LocalDbAsyncIndexPath, GameArray),
+        GameFunction(GameBool, "dbAsyncDone", LocalDbAsyncDone, GameScalar),
+        GameFunction(GameArray, "dbAsyncResult", LocalDbAsyncResult, GameScalar),
+        GameFunction(GameBool, "dbAsyncClear", LocalDbAsyncClear, GameScalar),
+        GameFunction(GameBool, "cacheLoad", LocalDbCacheLoad, GameArray),
+        GameFunction(GameString, "cacheGet", LocalDbCacheGet, GameArray),
+        GameFunction(GameBool, "cacheSet", LocalDbCacheSet, GameArray),
+        GameFunction(GameBool, "cacheFlush", LocalDbCacheFlush, GameArray),
+        GameFunction(GameScalar, "cacheAsyncFlush", LocalDbCacheAsyncFlush, GameArray),
+        GameFunction(GameBool, "cacheRemove", LocalDbCacheRemove, GameArray),
         GameFunction(GameBool, "jsonValid", JsonValid, GameString),
         GameFunction(GameString, "jsonGetString", JsonGetString, GameArray),
         GameFunction(GameScalar, "jsonGetNumber", JsonGetNumber, GameArray),

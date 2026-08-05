@@ -16,10 +16,13 @@
 #include <fstream>
 #include <ctime>
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <initializer_list>
 #include <map>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "../test_fixtures.hpp"
@@ -57,6 +60,13 @@ GameValue ClassOpen(const GameState* state, GameValuePar oper1, GameValuePar ope
 GameValue ClassAdd(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue ValueGet(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue ValueAdd(const GameState* state, GameValuePar oper1, GameValuePar oper2);
+GameValue LocalDbAsyncSave(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncLoad(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncRemove(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncDone(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncResult(const GameState* state, GameValuePar oper1);
+GameValue LocalDbAsyncClear(const GameState* state, GameValuePar oper1);
+GameValue LocalDbLoad(const GameState* state, GameValuePar oper1);
 extern bool GUseFileBanks;
 
 namespace
@@ -242,6 +252,39 @@ GameValue MakeConfigAssignment(const GameState& state, const char* name, GameVal
     return pair;
 }
 
+GameValue MakeStringArray(const GameState& state, std::initializer_list<const char*> values)
+{
+    GameValue value = state.CreateGameValue(GameArray);
+    GameArrayType& array = value;
+    array.Resize(static_cast<int>(values.size()));
+
+    int index = 0;
+    for (const char* item : values)
+        array[index++] = GameValue(item);
+    return value;
+}
+
+GameValue MakeMissionPhaseRegistration(const GameState& state, const char* phase, const char* code)
+{
+    GameValue value = state.CreateGameValue(GameArray);
+    GameArrayType& array = value;
+    array.Resize(2);
+    array[0] = GameValue(phase);
+    array[1] = GameValue(new GameDataCode(code));
+    return value;
+}
+
+GameValue WaitForAsyncLocalDbResult(const GameState& state, GameValue job)
+{
+    for (int attempt = 0; attempt < 200; ++attempt)
+    {
+        if ((bool)LocalDbAsyncDone(&state, job))
+            return LocalDbAsyncResult(&state, job);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return LocalDbAsyncResult(&state, job);
+}
+
 std::string BankConfigQuery(const std::string& stem)
 {
 #ifdef _WIN32
@@ -270,6 +313,14 @@ struct ScopedMissionHeader
         std::snprintf(Glob.header.worldname, sizeof(Glob.header.worldname), "%s", world.c_str());
         Glob.header.filenameReal = filenameReal;
     }
+};
+
+struct ScopedPlayerName
+{
+    explicit ScopedPlayerName(const char* name) : previous(Glob.header.playerName) { Glob.header.playerName = name; }
+    ~ScopedPlayerName() { Glob.header.playerName = previous; }
+
+    RString previous;
 };
 
 } // namespace
@@ -337,6 +388,21 @@ TEST_CASE("VBS-derived functions remain registered in GGameState", "[game][gameS
     REQUIRE(ContainsName(functions, "VBS_kills"));
     REQUIRE(ContainsName(functions, "VBS_killed"));
     REQUIRE(ContainsName(functions, "VBS_injuries"));
+    REQUIRE(ContainsName(functions, "dbAsyncSave"));
+    REQUIRE(ContainsName(functions, "dbAsyncLoad"));
+    REQUIRE(ContainsName(functions, "dbAsyncRemove"));
+    REQUIRE(ContainsName(functions, "dbAsyncExists"));
+    REQUIRE(ContainsName(functions, "dbAsyncList"));
+    REQUIRE(ContainsName(functions, "dbAsyncFind"));
+    REQUIRE(ContainsName(functions, "dbAsyncFindPath"));
+    REQUIRE(ContainsName(functions, "dbAsyncIndex"));
+    REQUIRE(ContainsName(functions, "dbAsyncIndexPath"));
+    REQUIRE(ContainsName(functions, "dbAsyncDone"));
+    REQUIRE(ContainsName(functions, "dbAsyncResult"));
+    REQUIRE(ContainsName(functions, "dbAsyncClear"));
+    REQUIRE(ContainsName(functions, "cacheAsyncFlush"));
+    REQUIRE(ContainsName(nulars, "cacheAsyncFlushAll"));
+    REQUIRE(ContainsName(nulars, "dbAsyncJobs"));
     REQUIRE(ContainsName(functions, "createGuardedPoint"));
     REQUIRE(ContainsName(functions, "deleteWaypoint"));
     REQUIRE(ContainsName(operators, "saveConfig"));
@@ -350,6 +416,43 @@ TEST_CASE("VBS-derived functions remain registered in GGameState", "[game][gameS
     REQUIRE(ContainsName(operators, "addWaypoint"));
 }
 
+TEST_CASE("async local DB save load and remove complete end to end", "[game][gameStateExt][local_db]")
+{
+    GGameState.Reset();
+    Poseidon::Foundation::InitModules();
+    ScopedPlayerName player("AsyncLocalDbTestPlayer");
+
+    GameValue saveArgs = MakeStringArray(GGameState, {"unit_async", "record", "{\"value\":42}"});
+    GameValue saveJob = LocalDbAsyncSave(&GGameState, saveArgs);
+    REQUIRE(static_cast<GameScalarType>(saveJob) > 0.0f);
+    GameValue saveResultValue = WaitForAsyncLocalDbResult(GGameState, saveJob);
+    const GameArrayType& saveResult = saveResultValue;
+    REQUIRE(saveResult.Size() == 4);
+    REQUIRE(strcmp(((GameStringType)saveResult[1]).Data(), "done") == 0);
+    REQUIRE((bool)saveResult[2]);
+    REQUIRE((bool)LocalDbAsyncClear(&GGameState, saveJob));
+
+    GameValue loadArgs = MakeStringArray(GGameState, {"unit_async", "record"});
+    GameValue loadJob = LocalDbAsyncLoad(&GGameState, loadArgs);
+    REQUIRE(static_cast<GameScalarType>(loadJob) > 0.0f);
+    GameValue loadResultValue = WaitForAsyncLocalDbResult(GGameState, loadJob);
+    const GameArrayType& loadResult = loadResultValue;
+    REQUIRE(loadResult.Size() == 4);
+    REQUIRE(strcmp(((GameStringType)loadResult[1]).Data(), "done") == 0);
+    REQUIRE((bool)loadResult[2]);
+    REQUIRE(strcmp(((GameStringType)loadResult[3]).Data(), "{\"value\":42}") == 0);
+    REQUIRE((bool)LocalDbAsyncClear(&GGameState, loadJob));
+
+    GameValue removeJob = LocalDbAsyncRemove(&GGameState, loadArgs);
+    REQUIRE(static_cast<GameScalarType>(removeJob) > 0.0f);
+    GameValue removeResultValue = WaitForAsyncLocalDbResult(GGameState, removeJob);
+    const GameArrayType& removeResult = removeResultValue;
+    REQUIRE(removeResult.Size() == 4);
+    REQUIRE(strcmp(((GameStringType)removeResult[1]).Data(), "done") == 0);
+    REQUIRE((bool)removeResult[2]);
+    REQUIRE((bool)LocalDbAsyncClear(&GGameState, removeJob));
+    REQUIRE(strcmp(((GameStringType)LocalDbLoad(&GGameState, loadArgs)).Data(), "") == 0);
+}
 TEST_CASE("XOR1024 encryption registers and round-trips data", "[game][gameStateExt][encryption]")
 {
     static bool registered = false;

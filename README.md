@@ -71,6 +71,7 @@ or the [Steam demo folder](https://store.steampowered.com/app/4819000/Arma_Cold_
 ## Layout
 
 - [Apps](apps/README.md) - executable targets
+- [Documentation](docs/README.md) - scripting and engine feature notes
 - [Engine](engine/README.md) - engine libraries and Rust Trident tooling
 - [Master server tools](mserver/README.md) - Rust service and CLI crates
 - [Tests](tests/README.md) - test source trees; CI currently compiles them only

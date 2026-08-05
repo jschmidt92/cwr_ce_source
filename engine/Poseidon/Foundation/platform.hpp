@@ -1,4 +1,6 @@
 #pragma once
+#ifndef POSEIDON_FOUNDATION_PLATFORM_HPP
+#define POSEIDON_FOUNDATION_PLATFORM_HPP
 
 const int MaxFileName = 2048;
 
@@ -133,7 +135,7 @@ namespace Poseidon::Foundation
 {
 extern void sleepMs(unsigned ms);
 extern unsigned long long getSystemTime();
-}
+} // namespace Poseidon::Foundation
 
 inline unsigned long long GetTickCount()
 {
@@ -273,3 +275,4 @@ inline std::string platformPath(const std::string& path)
 #define __END_DECLS   /* empty */
 #endif
 
+#endif // POSEIDON_FOUNDATION_PLATFORM_HPP
