@@ -523,6 +523,7 @@ GameValue MarkerGetPos(const GameState* state, GameValuePar oper1);
 GameValue MarkerGetSize(const GameState* state, GameValuePar oper1);
 GameValue MarkerGetType(const GameState* state, GameValuePar oper1);
 GameValue ObjAlive(const GameState* state, GameValuePar oper1);
+GameValue ObjLifeState(const GameState* state, GameValuePar oper1);
 GameValue ObjBehaviour(const GameState* state, GameValuePar oper1);
 GameValue ObjCanFire(const GameState* state, GameValuePar oper1);
 GameValue ObjCanMove(const GameState* state, GameValuePar oper1);
@@ -537,6 +538,7 @@ GameValue ObjFlee(const GameState* state, GameValuePar oper1);
 GameValue ObjFuel(const GameState* state, GameValuePar oper1);
 GameValue ObjGetAllMagazines(const GameState* state, GameValuePar oper1);
 GameValue ObjGetAllWeapons(const GameState* state, GameValuePar oper1);
+GameValue ObjUnitLoadout(const GameState* state, GameValuePar oper1);
 GameValue ObjGetDammage(const GameState* state, GameValuePar oper1);
 GameValue ObjGetDir(const GameState* state, GameValuePar oper1);
 GameValue ObjGetFlag(const GameState* state, GameValuePar oper1);
@@ -803,6 +805,7 @@ GameValue ObjSaveIdentity(const GameState* state, GameValuePar oper1, GameValueP
 GameValue ObjSaveStatus(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue ObjSay(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue ObjSelectWeapon(const GameState* state, GameValuePar oper1, GameValuePar oper2);
+GameValue ObjSetUnitLoadout(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue ObjSetAmmoCargo(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue ObjSetCaptive(const GameState* state, GameValuePar oper1, GameValuePar oper2);
 GameValue ObjSetDammage(const GameState* state, GameValuePar oper1, GameValuePar oper2);
@@ -994,6 +997,7 @@ static const GameFunction* GetExtUnary(int& count)
         GameFunction(GameBool, "isNull", ObjIsNull, GameObject),
         GameFunction(GameBool, "isNull", GrpIsNull, GameGroup),
         GameFunction(GameBool, "alive", ObjAlive, GameObject),
+        GameFunction(GameString, "lifeState", ObjLifeState, GameObject),
         GameFunction(GameBool, "local", ObjIsLocal, GameObject),
         GameFunction(GameBool, "requiredVersion", RequiredVersion, GameString),
         GameFunction(GameArray, "getPos", ObjGetPos, GameObject),
@@ -1250,6 +1254,7 @@ static const GameFunction* GetExtUnary(int& count)
         GameFunction(GameString, "secondaryWeapon", ObjGetSecondaryWeapon, GameObject),
         GameFunction(GameArray, "weapons", ObjGetAllWeapons, GameObject),
         GameFunction(GameArray, "magazines", ObjGetAllMagazines, GameObject),
+        GameFunction(GameArray, "getUnitLoadout", ObjUnitLoadout, GameObject),
 
         GameFunction(GameObject, "object", GetObject, GameScalar),
 
@@ -1370,6 +1375,7 @@ static const GameOperator* GetExtBinary(int& count)
         GameOperator(GameNothing, "removeMagazine", function, ObjRemoveMagazine, GameObject, GameString),
         GameOperator(GameNothing, "removeMagazines", function, ObjRemoveMagazines, GameObject, GameString),
         GameOperator(GameNothing, "selectWeapon", function, ObjSelectWeapon, GameObject, GameString),
+        GameOperator(GameNothing, "setUnitLoadout", function, ObjSetUnitLoadout, GameObject, GameArray),
         GameOperator(GameNothing, "fire", function, ObjFire, GameObject, GameString),
         GameOperator(GameNothing, "fire", function, ObjFireEx, GameObject, GameArray),
         GameOperator(GameScalar, "muzzleReloadTime", function, ObjMuzzleReloadTime, GameObject, GameString),
