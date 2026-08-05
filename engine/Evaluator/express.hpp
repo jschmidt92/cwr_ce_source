@@ -46,6 +46,7 @@ const GameType GameArray(2);
 const GameType GameBool(4);
 const GameType GameString(8);
 const GameType GameNothing(16);
+const GameType GameCode(32);
 const GameType GameIf(0x1000000);
 const GameType GameWhile(0x2000000);
 const GameType GameFor(0x4000000);
@@ -205,6 +206,17 @@ class GameDataString : public GameData
 #endif
 
     USE_FAST_ALLOCATOR
+};
+
+class GameDataCode : public GameDataString
+{
+  public:
+    GameDataCode() = default;
+    GameDataCode(GameStringType value) : GameDataString(value) {}
+    GameType GetType() const override { return GameCode; }
+    RString GetText() const override;
+    const char* GetTypeName() const override { return "code"; }
+    GameData* Clone() const override { return new GameDataCode(*this); }
 };
 
 class GameDataBool : public GameData
@@ -414,7 +426,7 @@ class GameValue : public SerializeClass
 
 #pragma clang diagnostic pop
 
-    typedef const GameValue& GameValuePar;
+typedef const GameValue& GameValuePar;
 
 class GameVariable
 {
@@ -436,7 +448,6 @@ class GameVariable
 
     bool IsReadOnly() const { return _readOnly; }
 };
-
 
 typedef MapStringToClass<GameVariable, AutoArray<GameVariable>> VarBankType;
 
@@ -472,7 +483,7 @@ struct GameNular : public GameOpName
     const char* GetKey() const { return _name; }
 };
 
-    typedef MapStringToClass<GameNular, AutoArray<GameNular>> GameNularsType;
+typedef MapStringToClass<GameNular, AutoArray<GameNular>> GameNularsType;
 
 struct GameFunction : public GameOpName
 {
@@ -489,8 +500,7 @@ struct GameFunction : public GameOpName
     }
 };
 
-    struct GameFunctions : public AutoArray<GameFunction>,
-                           public GameOpName
+struct GameFunctions : public AutoArray<GameFunction>, public GameOpName
 {
     RString _name;
     GameFunctions() = default;
@@ -498,7 +508,7 @@ struct GameFunction : public GameOpName
     const char* GetKey() const { return _name; }
 };
 
-    typedef MapStringToClass<GameFunctions, AutoArray<GameFunctions>> GameFunctionsType;
+typedef MapStringToClass<GameFunctions, AutoArray<GameFunctions>> GameFunctionsType;
 
 enum GamePriority
 {
@@ -533,8 +543,7 @@ struct GameOperator : public GameOpName
     }
 };
 
-    struct GameOperators : public AutoArray<GameOperator>,
-                           public GameOpName
+struct GameOperators : public AutoArray<GameOperator>, public GameOpName
 {
     RString _name;
     GamePriority _priority;
@@ -546,7 +555,7 @@ struct GameOperator : public GameOpName
     const char* GetKey() const { return _name; }
 };
 
-    typedef MapStringToClass<GameOperators, AutoArray<GameOperators>> GameOperatorsType;
+typedef MapStringToClass<GameOperators, AutoArray<GameOperators>> GameOperatorsType;
 
 typedef MapStringToClass<RString, AutoArray<RString>> GameNameType;
 
@@ -689,8 +698,7 @@ struct GameTypeType : public Poseidon::Foundation::EnumName
     GameData* CreateGameData() { return createFunction(); }
 };
 
-    class GameState : public SerializeClass,
-                      public GameVarSpace
+class GameState : public SerializeClass, public GameVarSpace
 {
   private:
     AutoArray<GameTypeType> _typeNames; // symbolic name list
