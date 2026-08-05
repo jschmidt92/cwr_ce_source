@@ -957,6 +957,7 @@ TEST_CASE("remoteExec target resolver -- target 0 includes server and eligible c
     REQUIRE(executedOnServer);
     REQUIRE(result.executedOnServer);
     REQUIRE(result.acceptedClientTarget);
+    REQUIRE(result.sentToClient);
     REQUIRE(sent == std::vector<int>{10, 12});
 }
 
@@ -972,6 +973,7 @@ TEST_CASE("remoteExec target resolver -- target 2 is server only", "[network][re
     REQUIRE(executedOnServer);
     REQUIRE(result.executedOnServer);
     REQUIRE_FALSE(result.acceptedClientTarget);
+    REQUIRE_FALSE(result.sentToClient);
     REQUIRE(sent.empty());
 }
 
@@ -987,6 +989,7 @@ TEST_CASE("remoteExec target resolver -- positive DPID selects one eligible clie
     REQUIRE_FALSE(executedOnServer);
     REQUIRE_FALSE(result.executedOnServer);
     REQUIRE(result.acceptedClientTarget);
+    REQUIRE(result.sentToClient);
     REQUIRE(sent == std::vector<int>{12});
 }
 
@@ -1002,6 +1005,7 @@ TEST_CASE("remoteExec target resolver -- disconnected positive DPID is ignored",
     REQUIRE_FALSE(executedOnServer);
     REQUIRE_FALSE(result.executedOnServer);
     REQUIRE_FALSE(result.acceptedClientTarget);
+    REQUIRE_FALSE(result.sentToClient);
     REQUIRE(sent.empty());
 }
 
@@ -1017,6 +1021,7 @@ TEST_CASE("remoteExec target resolver -- negative DPID excludes that client", "[
     REQUIRE_FALSE(executedOnServer);
     REQUIRE_FALSE(result.executedOnServer);
     REQUIRE(result.acceptedClientTarget);
+    REQUIRE(result.sentToClient);
     REQUIRE(sent == std::vector<int>{10, 12});
 }
 
@@ -1032,6 +1037,7 @@ TEST_CASE("remoteExec target resolver -- -2 targets clients only", "[network][re
     REQUIRE_FALSE(executedOnServer);
     REQUIRE_FALSE(result.executedOnServer);
     REQUIRE(result.acceptedClientTarget);
+    REQUIRE(result.sentToClient);
     REQUIRE(sent == std::vector<int>{10, 11});
 }
 
@@ -1050,6 +1056,7 @@ TEST_CASE("remoteExec target resolver -- object selector targets object owner", 
     REQUIRE_FALSE(executedOnServer);
     REQUIRE_FALSE(result.executedOnServer);
     REQUIRE(result.acceptedClientTarget);
+    REQUIRE(result.sentToClient);
     REQUIRE(sent == std::vector<int>{12});
 }
 
@@ -1068,6 +1075,7 @@ TEST_CASE("remoteExec target resolver -- server-owned object executes on server"
     REQUIRE(executedOnServer);
     REQUIRE(result.executedOnServer);
     REQUIRE_FALSE(result.acceptedClientTarget);
+    REQUIRE_FALSE(result.sentToClient);
     REQUIRE(sent.empty());
 }
 
@@ -1098,6 +1106,7 @@ TEST_CASE("remoteExec target resolver -- array selector flattens and deduplicate
     REQUIRE_FALSE(executedOnServer);
     REQUIRE_FALSE(result.executedOnServer);
     REQUIRE(result.acceptedClientTarget);
+    REQUIRE(result.sentToClient);
     REQUIRE(sent == std::vector<int>{10, 12});
 }
 

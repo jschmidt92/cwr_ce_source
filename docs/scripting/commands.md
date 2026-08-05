@@ -59,3 +59,8 @@ lifeState unit
 ```
 
 Returns `"HEALTHY"`, `"INJURED"`, `"UNCONSCIOUS"`, or `"DEAD"`.
+
+## Script Events
+
+See [event-system.md](event-system.md) for `eventOn`, `eventGet`, `eventList`,
+`eventOff`, `eventClear`, and the domain-specific event emitters.

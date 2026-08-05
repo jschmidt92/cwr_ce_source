@@ -1,8 +1,9 @@
 # Scripting
 
-- [Database and Cache](database.md)
 - [JSON Commands](json.md)
+- [Database and Cache](database.md)
 - [Scripting Commands](commands.md)
+- [Script Event System](event-system.md)
 
 ## SQS-Style Scripts
 
@@ -11,5 +12,5 @@ Scripts that use SQS flow control such as labels (`#label`), conditional jumps
 Keep command expressions on one line in those scripts.
 
 This is especially important for nested array arguments used by `jsonObject`,
-`jsonSelect`, and `cacheSet`. A multi-line expression can be parsed as an
-incomplete line and produce `Any`/type errors.
+`jsonSelect`, `cacheSet`, and `eventOn` inline code blocks. A multi-line
+expression can be parsed as an incomplete line and produce `Any`/type errors.

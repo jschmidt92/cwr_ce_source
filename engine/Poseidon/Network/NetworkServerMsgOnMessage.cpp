@@ -110,13 +110,14 @@ static NetworkObject* ResolveServerNetworkObject(void* context, const NetworkId&
     return server ? server->GetObject(mutableId) : nullptr;
 }
 
-static void ExecuteNamedRemoteExec(GameState* gstate, RString name, GameValuePar params)
+static void ExecuteNamedRemoteExec(GameState* gstate, RString name, GameValuePar params, int sender)
 {
     if (!gstate || !WireBounds::ValidIdentifier(name, 256))
     {
         return;
     }
 
+    Poseidon::ScriptEventSenderScope senderScope(sender);
     GameVarSpace local(gstate->GetContext());
     gstate->BeginContext(&local);
     gstate->VarSetLocal("_this", params, true);
@@ -131,6 +132,12 @@ static void ExecuteNamedRemoteExec(GameState* gstate, RString name, GameValuePar
     gstate->EndContext();
 }
 
+static int NextServerRemoteExecSequence()
+{
+    static int sequence = 0;
+    return ++sequence;
+}
+
 static bool RemoteExecCanRunServer(int from, int gameMaster)
 {
     return Poseidon::RemoteExecServerAuthorized(from, gameMaster, AI_PLAYER);
@@ -139,6 +146,139 @@ static bool RemoteExecCanRunServer(int from, int gameMaster)
 static bool PublicExecCanRunClients(int from, int gameMaster, int botClient)
 {
     return from == botClient || (gameMaster != AI_PLAYER && from == gameMaster);
+}
+
+bool NetworkServer::RemoteExec(RString name, const AutoArray<char>& params, int target,
+                               const AutoArray<char>& targetSpec, bool jip, RString jipKey, bool callMode)
+{
+    if (!WireBounds::ValidIdentifier(name, 256))
+    {
+        return false;
+    }
+
+    RemoteExecMessage msg;
+    msg._name = name;
+    msg._params = params;
+    msg._target = target;
+    msg._targetSpec = targetSpec;
+    msg._jip = jip;
+    msg._jipKey = jipKey;
+    msg._callMode = callMode;
+    msg._originator = AI_PLAYER;
+    msg._sequence = NextServerRemoteExecSequence();
+    msg._remove = false;
+
+    RemoteExecTargetSelector targetSelector;
+    bool selectorDecoded = false;
+    if (targetSpec.Size() > 0)
+    {
+        selectorDecoded = DecodeRemoteExecTargetSelector(targetSelector, targetSpec);
+        if (!selectorDecoded)
+        {
+            LOG_WARN(Network, "server remoteExec '{}' rejected malformed target selector", (const char*)name);
+            return false;
+        }
+    }
+    if (!selectorDecoded)
+    {
+        targetSelector.kind = RemoteExecTargetKind::Scalar;
+        targetSelector.scalar = target;
+    }
+
+    bool acceptedForJip = false;
+    NetworkRemoteExecDispatchResult dispatch;
+    if (targetSelector.kind == RemoteExecTargetKind::Scalar)
+    {
+        dispatch = DispatchNetworkRemoteExecTarget(
+            target, _players.Size(), [this](int index) { return _players[index].dpid; },
+            [this](int index) { return _players[index].state; }, NGSLoadIsland,
+            [this, &msg](int dpid) { SendMsg(dpid, &msg, NMFGuaranteed); },
+            [this, &msg]()
+            {
+                GameValue payload = Poseidon::DecodeScriptValue(msg._params, ResolveServerNetworkObject, this);
+                if (!payload.GetNil() && GWorld && GWorld->GetGameState())
+                {
+                    ExecuteNamedRemoteExec(GWorld->GetGameState(), msg._name, payload, AI_PLAYER);
+                }
+            });
+        acceptedForJip = dispatch.acceptedClientTarget || dispatch.executedOnServer;
+    }
+    else
+    {
+        dispatch = DispatchNetworkRemoteExecTargetSelector(
+            targetSelector, _players.Size(), [this](int index) { return _players[index].dpid; },
+            [this](int index) { return _players[index].state; }, NGSLoadIsland,
+            [this, &msg](int dpid) { SendMsg(dpid, &msg, NMFGuaranteed); },
+            [this, &msg]()
+            {
+                GameValue payload = Poseidon::DecodeScriptValue(msg._params, ResolveServerNetworkObject, this);
+                if (!payload.GetNil() && GWorld && GWorld->GetGameState())
+                {
+                    ExecuteNamedRemoteExec(GWorld->GetGameState(), msg._name, payload, AI_PLAYER);
+                }
+            },
+            [this](const NetworkId& id)
+            {
+                if (id.IsNull())
+                {
+                    return 0;
+                }
+                NetworkId mutableId = id;
+                NetworkObjectInfo* info = GetObjectInfo(mutableId);
+                return info ? info->owner : 0;
+            });
+        acceptedForJip = dispatch.acceptedClientTarget || dispatch.executedOnServer;
+    }
+
+    if (acceptedForJip && jip && _missionHeader.joinInProgress)
+    {
+        static const int kMaxJIPMessages = 10000;
+        NetworkMessageFormatBase* format = GetFormat(NMTRemoteExec);
+        Ref<NetworkMessage> storedMsg = new NetworkMessage();
+        if (!format)
+        {
+            return dispatch.executedOnServer || dispatch.sentToClient || acceptedForJip;
+        }
+        storedMsg->time = Glob.time;
+        NetworkMessageContext ctx(storedMsg, format, this, TO_SERVER, MSG_SEND);
+        if (msg.TransferMsg(ctx) != TMOK)
+        {
+            return dispatch.executedOnServer || dispatch.sentToClient || acceptedForJip;
+        }
+        NetworkJipMessageStoreAction action = BuildNetworkJipMessageStoreAction(
+            _jipMessages.Size(), [this](int index) { return _jipMessages[index].type; },
+            [this](int index) { return _jipMessages[index].key; }, NMTRemoteExec, jipKey, kMaxJIPMessages);
+        if (action.shouldReplace)
+        {
+            _jipMessages[action.replaceIndex].msg = storedMsg;
+        }
+        else if (action.shouldAppend)
+        {
+            JIPInitMessage jipMsg;
+            jipMsg.type = NMTRemoteExec;
+            jipMsg.msg = storedMsg;
+            jipMsg.key = jipKey;
+            _jipMessages.Add(jipMsg);
+        }
+    }
+
+    return dispatch.executedOnServer || dispatch.sentToClient || acceptedForJip;
+}
+
+bool NetworkServer::RemoteExecRemove(RString jipKey)
+{
+    bool removed = false;
+    for (int i = 0; i < _jipMessages.Size();)
+    {
+        if (_jipMessages[i].type == NMTRemoteExec && _jipMessages[i].key == jipKey)
+        {
+            _jipMessages.Delete(i);
+            removed = true;
+            continue;
+        }
+        ++i;
+    }
+    return removed;
 }
 
 void NetworkServer::OnMessage(int from, NetworkMessage* msg, NetworkMessageType type)
@@ -699,7 +839,7 @@ void NetworkServer::OnMessage(int from, NetworkMessage* msg, NetworkMessageType 
                     GameValue payload = Poseidon::DecodeScriptValue(params._params, ResolveServerNetworkObject, this);
                     if (!payload.GetNil() && GWorld && GWorld->GetGameState())
                     {
-                        ExecuteNamedRemoteExec(GWorld->GetGameState(), params._name, payload);
+                        ExecuteNamedRemoteExec(GWorld->GetGameState(), params._name, payload, from);
                     }
                     acceptedForJip = true;
                 }
@@ -753,7 +893,7 @@ void NetworkServer::OnMessage(int from, NetworkMessage* msg, NetworkMessageType 
                                     Poseidon::DecodeScriptValue(params._params, ResolveServerNetworkObject, this);
                                 if (!payload.GetNil() && GWorld && GWorld->GetGameState())
                                 {
-                                    ExecuteNamedRemoteExec(GWorld->GetGameState(), params._name, payload);
+                                    ExecuteNamedRemoteExec(GWorld->GetGameState(), params._name, payload, from);
                                 }
                             },
                             [this](const NetworkId& id)
