@@ -579,6 +579,29 @@ GameValue ObjWeaponsFromPool(const GameState* state, GameValuePar oper1);
 GameValue PlayMusic(const GameState* state, GameValuePar oper1);
 GameValue PlaySound(const GameState* state, GameValuePar oper1);
 GameValue SoundLength(const GameState* state, GameValuePar oper1);
+GameValue JsonValid(const GameState* state, GameValuePar oper1);
+GameValue JsonGetString(const GameState* state, GameValuePar oper1);
+GameValue JsonGetNumber(const GameState* state, GameValuePar oper1);
+GameValue JsonGetBool(const GameState* state, GameValuePar oper1);
+GameValue JsonGetArray(const GameState* state, GameValuePar oper1);
+GameValue JsonGet(const GameState* state, GameValuePar oper1);
+GameValue JsonSelect(const GameState* state, GameValuePar oper1);
+GameValue JsonPathGet(const GameState* state, GameValuePar oper1);
+GameValue JsonPathSet(const GameState* state, GameValuePar oper1);
+GameValue JsonPathRemove(const GameState* state, GameValuePar oper1);
+GameValue JsonStringify(const GameState* state, GameValuePar oper1);
+GameValue JsonObject(const GameState* state, GameValuePar oper1);
+GameValue JsonSet(const GameState* state, GameValuePar oper1);
+GameValue JsonRemove(const GameState* state, GameValuePar oper1);
+GameValue JsonHas(const GameState* state, GameValuePar oper1);
+GameValue JsonKeys(const GameState* state, GameValuePar oper1);
+GameValue JsonValues(const GameState* state, GameValuePar oper1);
+GameValue JsonCount(const GameState* state, GameValuePar oper1);
+GameValue JsonAt(const GameState* state, GameValuePar oper1);
+GameValue JsonPush(const GameState* state, GameValuePar oper1);
+GameValue JsonInsert(const GameState* state, GameValuePar oper1);
+GameValue JsonSetAt(const GameState* state, GameValuePar oper1);
+GameValue JsonDeleteAt(const GameState* state, GameValuePar oper1);
 GameValue PlayersNumber(const GameState* state, GameValuePar oper1);
 GameValue PoolAddMagazine(const GameState* state, GameValuePar oper1);
 GameValue PoolAddWeapon(const GameState* state, GameValuePar oper1);
@@ -1050,6 +1073,29 @@ static const GameFunction* GetExtUnary(int& count)
 
         GameFunction(GameString, "format", StrFormat, GameArray),
         GameFunction(GameString, "localize", StrLocalize, GameString),
+        GameFunction(GameBool, "jsonValid", JsonValid, GameString),
+        GameFunction(GameString, "jsonGetString", JsonGetString, GameArray),
+        GameFunction(GameScalar, "jsonGetNumber", JsonGetNumber, GameArray),
+        GameFunction(GameBool, "jsonGetBool", JsonGetBool, GameArray),
+        GameFunction(GameArray, "jsonGetArray", JsonGetArray, GameArray),
+        GameFunction(GameAny, "jsonGet", JsonGet, GameArray),
+        GameFunction(GameArray, "jsonSelect", JsonSelect, GameArray),
+        GameFunction(GameAny, "jsonPathGet", JsonPathGet, GameArray),
+        GameFunction(GameString, "jsonPathSet", JsonPathSet, GameArray),
+        GameFunction(GameString, "jsonPathRemove", JsonPathRemove, GameArray),
+        GameFunction(GameString, "jsonStringify", JsonStringify, GameAny),
+        GameFunction(GameString, "jsonObject", JsonObject, GameArray),
+        GameFunction(GameString, "jsonSet", JsonSet, GameArray),
+        GameFunction(GameString, "jsonRemove", JsonRemove, GameArray),
+        GameFunction(GameBool, "jsonHas", JsonHas, GameArray),
+        GameFunction(GameArray, "jsonKeys", JsonKeys, GameString),
+        GameFunction(GameArray, "jsonValues", JsonValues, GameString),
+        GameFunction(GameScalar, "jsonCount", JsonCount, GameString),
+        GameFunction(GameAny, "jsonAt", JsonAt, GameArray),
+        GameFunction(GameString, "jsonPush", JsonPush, GameArray),
+        GameFunction(GameString, "jsonInsert", JsonInsert, GameArray),
+        GameFunction(GameString, "jsonSetAt", JsonSetAt, GameArray),
+        GameFunction(GameString, "jsonDeleteAt", JsonDeleteAt, GameArray),
 
         GameFunction(GameNothing, "skipTime", SkipDayTime, GameScalar),
         GameFunction(GameNothing, "setViewDistance", SetViewDistance, GameScalar),
