@@ -65,7 +65,6 @@ using namespace Poseidon::Dev;
 #include <Poseidon/Core/Config/EngineConfig.hpp>
 #include <Poseidon/Core/Profile/ProfileManager.hpp>
 #include <Poseidon/Foundation/Common/GamePaths.hpp>
-#include <Poseidon/Foundation/Common/PlayerPrefs.hpp>
 #include <Poseidon/Foundation/Memory/CheckMem.hpp>
 #include <Poseidon/AI/AI.hpp>
 #include <Poseidon/AI/VehicleAI.hpp>
@@ -108,6 +107,7 @@ bool TriNetworkAssetFileExists(const RString& relativePath)
 } // namespace
 
 GameValue TriVersion(const GameState*);
+GameValue TriEndGame(const GameState*);
 GameValue TriGameMode(const GameState*);
 GameValue TriDisplay(const GameState*);
 GameValue TriEditorMode(const GameState*);
@@ -120,8 +120,11 @@ GameValue TriSeedSessions(const GameState*, GameValuePar);
 GameValue TriSessionPing(const GameState*, GameValuePar);
 GameValue TriSeedMods(const GameState*, GameValuePar);
 GameValue TriSeedWorkshopMods(const GameState*, GameValuePar);
+GameValue TriFetchWorkshopMods(const GameState*);
+GameValue TriReadWorkshopFile(const GameState*, GameValuePar);
 GameValue TriSortMods(const GameState*, GameValuePar);
 GameValue TriModsVisibleCount(const GameState*);
+GameValue TriModsFreshness(const GameState*, GameValuePar);
 GameValue TriModsSetFilter(const GameState*, GameValuePar);
 GameValue TriModsRowClick(const GameState*, GameValuePar);
 GameValue TriOpenModDownload(const GameState*, GameValuePar);
@@ -141,6 +144,7 @@ GameValue TriSelectList(const GameState*, GameValuePar);
 GameValue TriSelectListByData(const GameState*, GameValuePar);
 GameValue TriListSel(const GameState*, GameValuePar);
 GameValue TriAssertListSelAtLeast(const GameState*, GameValuePar);
+GameValue TriRemoveNestedControl(const GameState*, GameValuePar);
 GameValue TriSendKey(const GameState*, GameValuePar);
 GameValue TriSendKeyArr(const GameState*, GameValuePar);
 GameValue TriSendText(const GameState*, GameValuePar);
@@ -997,15 +1001,22 @@ static GameValue TriSetPersonFaceView(Person* player, float distance)
     if (!player)
         return GameValue("FAIL:no_player");
 
-    Vector3 forward = player->GetEyeDirection();
+    if (Man* man = dyn_cast<Man>(player))
+    {
+        if (stricmp(man->GetCurrentMove(), "EffectStandStill") != 0)
+            man->SwitchMove("EffectStandStill");
+        man->SetMimic("Default");
+    }
+
+    Vector3 forward = player->Direction();
     if (forward.SquareSize() < 1e-6f)
-        forward = player->Direction();
+        forward = player->GetEyeDirection();
     if (forward.SquareSize() < 1e-6f)
         return GameValue("FAIL:no_player_direction");
     forward = forward.Normalized();
 
     Man* man = dyn_cast<Man>(player);
-    const Vector3 target = man ? man->PositionModelToWorld(man->GetHeadCenter()) : player->CameraPosition();
+    const Vector3 target = man ? man->CalculateCameraPosition(man->Transform()) : player->CameraPosition();
     const Vector3 pos = target + forward * std::max(distance, 0.1f);
     const Vector3 dir = (target - pos).Normalized();
     World_SetTriViewOverride(pos, dir, VUp);
@@ -1762,19 +1773,16 @@ GameValue TriPlayCustomRadio(const GameState* /*state*/, GameValuePar arg)
     return GameValue(GWorld->UI()->PlayCustomRadio(index) ? "OK" : "FAIL:not_available");
 }
 
-/// triSetPlayerPref <name> — write the persisted last-used profile name (the
-/// PlayerName pref). A sequence phase uses this to leave a stale pref for the
-/// next boot. Returns "OK".
-GameValue TriSetPlayerPref(const GameState* /*state*/, GameValuePar arg)
+GameValue TriSetActiveProfile(const GameState* /*state*/, GameValuePar arg)
 {
     std::string name = ((RString)(GameStringType)arg).Data();
-    Foundation::prefsSetString(AppName, "PlayerName", name.c_str());
+    SaveActiveProfile(name);
     return GameValue("OK");
 }
 
 /// triAssertProfileMissing <name> -> "OK" if no profile directory exists for
 /// <name> under the user dir, else "FAIL:profile_exists". A later boot must not
-/// recreate a profile that a stale pref points at.
+/// recreate a profile that a stale active-profile setting points at.
 GameValue TriAssertProfileMissing(const GameState* /*state*/, GameValuePar arg)
 {
     std::string name = ((RString)(GameStringType)arg).Data();
@@ -2922,6 +2930,7 @@ INIT_MODULE(GameStateExtTest, 3)
     if (!appConfig.DevMode() && appConfig.GetHarnessPort() < 0 && appConfig.GetTestMissionPath().empty())
         return;
 
+    GGameState.NewNularOp(GameNular(GameNothing, "triEndGame", TriEndGame));
     GGameState.NewNularOp(GameNular(GameString, "triVersion", TriVersion));
     GGameState.NewNularOp(GameNular(GameScalar, "triGameMode", TriGameMode));
     GGameState.NewNularOp(GameNular(GameScalar, "triDisplay", TriDisplay));
@@ -2966,8 +2975,11 @@ INIT_MODULE(GameStateExtTest, 3)
     GGameState.NewFunction(GameFunction(GameScalar, "triSessionPing", TriSessionPing, GameScalar));
     GGameState.NewFunction(GameFunction(GameBool, "triSeedMods", TriSeedMods, GameScalar));
     GGameState.NewFunction(GameFunction(GameBool, "triSeedWorkshopMods", TriSeedWorkshopMods, GameScalar));
+    GGameState.NewNularOp(GameNular(GameBool, "triFetchWorkshopMods", TriFetchWorkshopMods));
+    GGameState.NewFunction(GameFunction(GameString, "triReadWorkshopFile", TriReadWorkshopFile, GameArray));
     GGameState.NewFunction(GameFunction(GameBool, "triSortMods", TriSortMods, GameScalar));
     GGameState.NewNularOp(GameNular(GameScalar, "triModsVisibleCount", TriModsVisibleCount));
+    GGameState.NewFunction(GameFunction(GameString, "triModsFreshness", TriModsFreshness, GameScalar));
     GGameState.NewFunction(GameFunction(GameBool, "triModsSetFilter", TriModsSetFilter, GameString));
     GGameState.NewFunction(GameFunction(GameBool, "triModsRowClick", TriModsRowClick, GameArray));
     GGameState.NewFunction(GameFunction(GameBool, "triOpenModDownload", TriOpenModDownload, GameScalar));
@@ -2987,6 +2999,7 @@ INIT_MODULE(GameStateExtTest, 3)
     GGameState.NewFunction(GameFunction(GameBool, "triSelectList", TriSelectList, GameArray));
     GGameState.NewFunction(GameFunction(GameBool, "triSelectListByData", TriSelectListByData, GameArray));
     GGameState.NewFunction(GameFunction(GameScalar, "triListSel", TriListSel, GameScalar));
+    GGameState.NewFunction(GameFunction(GameBool, "triRemoveNestedControl", TriRemoveNestedControl, GameScalar));
     GGameState.NewFunction(GameFunction(GameBool, "triSendKey", TriSendKey, GameScalar));
     GGameState.NewFunction(GameFunction(GameBool, "triSendKey", TriSendKeyArr, GameArray));
     GGameState.NewFunction(GameFunction(GameString, "triEndMission", TriEndMission, GameString));
@@ -3057,7 +3070,7 @@ INIT_MODULE(GameStateExtTest, 3)
     GGameState.NewFunction(GameFunction(GameString, "triAssertRegionHasColor", TriAssertRegionHasColor, GameArray));
     GGameState.NewNularOp(GameNular(GameString, "triCustomRadio", TriCustomRadio));
     GGameState.NewFunction(GameFunction(GameString, "triPlayCustomRadio", TriPlayCustomRadio, GameScalar));
-    GGameState.NewFunction(GameFunction(GameString, "triSetPlayerPref", TriSetPlayerPref, GameString));
+    GGameState.NewFunction(GameFunction(GameString, "triSetActiveProfile", TriSetActiveProfile, GameString));
     GGameState.NewFunction(GameFunction(GameString, "triAssertProfileMissing", TriAssertProfileMissing, GameString));
     GGameState.NewFunction(GameFunction(GameString, "triDamagePlayerVehicle", TriDamagePlayerVehicle, GameScalar));
     GGameState.NewNularOp(GameNular(GameScalar, "triPlayerVehicleDammage", TriPlayerVehicleDammage));

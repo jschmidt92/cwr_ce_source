@@ -278,6 +278,7 @@ public:
 	IControl *GetCtrl(float x, float y) override;
 
 	bool SetSubControlPos(int idc, float x, float y, float w, float h);
+	bool GetSubControlPos(int idc, float &x, float &y, float &w, float &h) const;
 
 	int GetHoveredIdc() const;
 
@@ -293,6 +294,7 @@ public:
 
 	IControl *GetFocused() override;
 	bool OnSetFocus(bool up = true, bool def = false) override;
+	bool WantsTextInput() const override;
 	bool CanBeDefault() const override;
 
 	void OnLButtonDown(float x, float y) override;
@@ -320,6 +322,7 @@ public:
 protected:
 	void LoadControls(const ParamEntry &cls);
 	int FindControl(float x, float y);
+	void UpdateTextInputState();
 
 	void SetFocus(int i, bool def = false);
 	bool NextCtrl();

@@ -1,13 +1,44 @@
 #include <Poseidon/UI/Options/OptionsScrollList.hpp>
+#include <Poseidon/Foundation/Strings/Mbcs.hpp>
 #include <Poseidon/UI/Options/OptionsShell.hpp>
 #include <Poseidon/UI/OptionsUI.hpp>
 #include <Poseidon/UI/Controls/UIControlsBase.hpp>
+#include <Poseidon/UI/OptionsUICommon.hpp>
 #include <Poseidon/UI/UITestEngine.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
+#include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <system_error>
 
 using namespace Poseidon;
+namespace fs = std::filesystem;
+
+namespace
+{
+struct TempOptionsDir
+{
+    fs::path root;
+
+    TempOptionsDir()
+    {
+        const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+        root = fs::temp_directory_path() / ("poseidon_options_" + std::to_string(nonce));
+        fs::create_directories(root);
+    }
+
+    ~TempOptionsDir()
+    {
+        std::error_code ec;
+        fs::permissions(root, fs::perms::owner_all, fs::perm_options::add, ec);
+        fs::remove_all(root, ec);
+    }
+};
+} // namespace
+
 TEST_CASE("optionsUI compiles", "[optionsUI][tier3]")
 {
     REQUIRE(sizeof(AbstractOptionsUI) > 0);
@@ -149,6 +180,9 @@ TEST_CASE("OptionsScrollList::FormatCell clips idle cells and marquees focused o
     OptionsScrollList::FormatCell("Left Shift", OptionsScrollList::kBindingAltInnerChars, false, advanced, buf,
                                   sizeof(buf));
     CHECK(std::string(buf) == "Left S");
+
+    OptionsScrollList::FormatCell("Načíst vybrané mody", 8, true, advanced, buf, sizeof(buf));
+    CHECK(Foundation::CountUtf8Codepoints(buf) == 8);
 }
 
 TEST_CASE("OptionsPage cycle membership helper only accepts listed IDCs", "[optionsUI][UI]")
@@ -161,4 +195,61 @@ TEST_CASE("OptionsPage cycle membership helper only accepts listed IDCs", "[opti
     CHECK_FALSE(page.ContainsCycleIdc(1105, cycle, 3));
     CHECK_FALSE(page.ContainsCycleIdc(-1, cycle, 3));
     CHECK_FALSE(page.ContainsCycleIdc(1101, nullptr, 3));
+}
+
+TEST_CASE("Continue save selection creates a readable copy", "[optionsUI][savegame]")
+{
+    TempOptionsDir dir;
+    const fs::path save = dir.root / "save.fps";
+    const fs::path continueSave = dir.root / "continue.fps";
+    std::ofstream(save, std::ios::binary) << "saved-world";
+
+    const std::string saveDir = dir.root.string() + "/";
+    EnsureContinueSave(saveDir.c_str());
+
+    std::ifstream input(continueSave, std::ios::binary);
+    std::string payload;
+    input >> payload;
+    CHECK(payload == "saved-world");
+}
+
+TEST_CASE("User missions use profile save directories", "[optionsUI][savegame]")
+{
+    const bool userMission = IsUserMission();
+    const RString baseDirectory = GetBaseDirectory();
+    const RString baseSubdirectory = GetBaseSubdirectory();
+    const RString filenameReal = Glob.header.filenameReal;
+    const std::string worldName = Glob.header.worldname;
+
+    SetBaseDirectory(true, GetUserMissionsBase());
+    SetBaseSubdirectory("missions/");
+    Glob.header.filenameReal = "";
+
+    CHECK(GetSaveDirectory() == GetTmpSaveDirectory());
+
+    Glob.header.filenameReal = "editor_test";
+    std::snprintf(Glob.header.worldname, sizeof(Glob.header.worldname), "%s", "demo");
+    const RString namedSaveDirectory = GetUserDirectory() + RString("UserSaved/missions/editor_test.demo/");
+    CHECK(GetSaveDirectory() == namedSaveDirectory);
+
+#ifndef _WIN32
+    Glob.header.filenameReal = "legacy_test";
+    const RString legacySaveDirectory = GetUserDirectory() + RString("Saved/") + GetBaseDirectory() +
+                                        GetBaseSubdirectory() + RString("legacy_test.demo/");
+    fs::create_directories(fs::path(static_cast<const char*>(legacySaveDirectory)));
+    std::ofstream(fs::path(static_cast<const char*>(legacySaveDirectory)) / "save.fps", std::ios::binary)
+        << "saved-world";
+
+    const RString migratedSaveDirectory = GetSaveDirectory();
+    std::ifstream migrated(fs::path(static_cast<const char*>(migratedSaveDirectory)) / "save.fps", std::ios::binary);
+    std::string payload;
+    migrated >> payload;
+    CHECK(payload == "saved-world");
+    CHECK(fs::exists(fs::path(static_cast<const char*>(legacySaveDirectory)) / "save.fps"));
+#endif
+
+    SetBaseDirectory(userMission, baseDirectory);
+    SetBaseSubdirectory(baseSubdirectory);
+    Glob.header.filenameReal = filenameReal;
+    std::snprintf(Glob.header.worldname, sizeof(Glob.header.worldname), "%s", worldName.c_str());
 }
