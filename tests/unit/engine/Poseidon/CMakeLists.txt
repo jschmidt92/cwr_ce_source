@@ -146,10 +146,12 @@ set(POSEIDON_TEST_SOURCES
     Graphics/test_model_renderer.cpp
     Graphics/test_gl33_rendering.cpp
     Graphics/test_gl33_bind_cache.cpp
+    Graphics/test_gl33_land_clip.cpp
     Graphics/test_gl33_state_cache.cpp
     Graphics/test_fan_decompose.cpp
     Graphics/test_zbias_math.cpp
     Graphics/test_mipmap_layout.cpp
+    Graphics/test_texture_dummy_size.cpp
     Graphics/test_gl_state_cache_audit.cpp
     Graphics/test_ibo_bind_audit.cpp
     Graphics/test_buffer_usage_audit.cpp
@@ -214,6 +216,7 @@ list(APPEND POSEIDON_TEST_SOURCES
     Asset/Formats/test_wrp.cpp
     Asset/Formats/RTM/test_rtm_reader.cpp
     Asset/Formats/test_rtm.cpp
+    Asset/Formats/test_p3d_model_load.cpp
     Asset/Formats/test_paa.cpp
     Asset/Formats/test_pac.cpp
     
@@ -372,6 +375,7 @@ list(APPEND POSEIDON_TEST_SOURCES
 
     # IO tests (batch-15)
     World/test_io_types.cpp
+    IO/test_mapFile.cpp
     IO/test_paramFileExt.cpp
     IO/test_paramFile_defaults.cpp
 
@@ -464,6 +468,7 @@ list(APPEND POSEIDON_TEST_SOURCES
     UI/Controls/test_uiControls.cpp
     UI/Controls/test_progress_bar_widget.cpp
     UI/Controls/test_control_object_rotate_devmode.cpp
+    UI/Controls/test_html_table_row.cpp
     UI/test_button_modal_page.cpp
     UI/test_capture_page.cpp
     UI/test_confirm_page.cpp
