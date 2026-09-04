@@ -18,6 +18,7 @@
 #include <Poseidon/Foundation/Math/MathOpt.hpp>
 #include <Poseidon/Foundation/Memory/CheckMem.hpp>
 #include <algorithm>
+#include <cstdlib>
 #include <map>
 #include <string>
 #include <vector>
@@ -868,6 +869,29 @@ static bool FarEnoughForOcclusion(const SortObject* oi)
 
 void Scene::AdjustComplexity()
 {
+    // Benchmark aid: POSEIDON_LOD_FIX freezes the adaptive detail scaler so per-frame
+    // draw-call and buffer-upload counts are reproducible. A positive numeric value pins
+    // _lodInvWidth directly (clamped to the quality band); any other value pins to the
+    // highest-detail bound. Unset = normal frame-rate-driven adaptation.
+    static const float lodFix = []() -> float
+    {
+        const char* e = std::getenv("POSEIDON_LOD_FIX");
+        if (!e)
+            return 0.0f;
+        const float v = static_cast<float>(std::atof(e));
+        return v > 0.0f ? v : -1.0f; // -1 == pin to highest detail (_minLodInvWidth)
+    }();
+    if (lodFix != 0.0f)
+    {
+        _lodInvWidth = lodFix > 0.0f ? lodFix : _minLodInvWidth;
+        saturate(_lodInvWidth, _minLodInvWidth, _maxLodInvWidth);
+        // Still assign each object's draw/shadow LOD at the pinned density; only the
+        // frame-time-driven adjustment of _lodInvWidth below is skipped.
+        AdjustComplexity(_drawObjects);
+        AdjustShadowComplexity(_drawObjects);
+        return;
+    }
+
     float oldLodInvWidth = _lodInvWidth;
 
     // adjust lodInvWidth so we are on the line given by points
@@ -1609,15 +1633,20 @@ void Scene::DrawObjectsAndShadowsPass1()
 
 #if DRAW_OBJS
     {
-        // Instanced runs (perf effort 08): _drawMergers is shape-sorted, so
-        // identical static shapes arrive contiguously. A batchable run draws
-        // the head once inside Begin/EndInstancedRun — every TL section then
-        // renders all K instances from the WorldInstances matrix array. The
-        // predicate keeps per-object state out of batches: static, proxy-free,
-        // not OnSurface/IsColored, equal obj-special, no local lights in the
-        // scene, and a tight distance band so the head's constant-fog value
-        // is representative for the whole batch.
-        const bool noLocalLights = NLights() == 0;
+        // _drawMergers is shape-sorted, so identical static shapes arrive contiguously. A
+        // batchable run draws the head once inside Begin/EndInstancedRun; every TL section
+        // then renders all K instances from the WorldInstances matrix array.
+        LightList lightProbe(true);
+        auto litByLocalLight = [&](SortObject* o) -> bool
+        {
+            if (!o->object)
+            {
+                return false;
+            }
+            const LightList& sel = SelectLights(o->object->Transform(), o->object, o->drawLOD, lightProbe);
+            return sel.Size() > 0;
+        };
+        const int kMinInstanceRun = 2;
         for (int i = 0; i < _drawMergers.Size();)
         {
             SortObject* oi = _drawMergers[i];
@@ -1643,26 +1672,27 @@ void Scene::DrawObjectsAndShadowsPass1()
             int runEnd = i + 1;
             const int headSpecial = sShape->Special() | oi->object->GetObjSpecial();
             const render::LegacySpec headSpec = render::SplitLegacy(headSpecial);
-            const bool headBatchable = noLocalLights && oi->object->Static() && sShape->NProxies() == 0 &&
-                                       !render::Has(headSpec.routing, render::Routing::OnSurface) &&
-                                       !render::Has(headSpec.routing, render::Routing::IsColored) &&
-                                       oi->object != GWorld->CameraOn();
+            const bool cpuDeform = oi->object->IsAnimated(oi->drawLOD);
+            const bool vsDeform =
+                GEngine->LandClipInVS() && oi->object->GetLandClipMode(oi->drawLOD) != Object::LandClipNone;
+            const bool cheapPass =
+                !oi->object->DeformsSharedShape(oi->drawLOD) && (!cpuDeform || vsDeform) && oi->object->Static() &&
+                sShape->NProxies() == 0 && !render::Has(headSpec.routing, render::Routing::OnSurface) &&
+                !render::Has(headSpec.routing, render::Routing::IsColored) && oi->object != GWorld->CameraOn();
+            const bool lit = cheapPass && litByLocalLight(oi);
+            const bool headBatchable = cheapPass && !lit;
             if (headBatchable)
             {
                 GEngine->InstancedRunReset();
                 if (GEngine->InstancedRunAdd(oi->object->Transform()))
                 {
-                    // Fog band: keep members within ~5% of the head's distance so
-                    // the head's per-object constant fog approximates all of them.
-                    const float d2lo = oi->distance2 * 0.90f;
-                    const float d2hi = oi->distance2 * 1.10f;
                     while (runEnd < _drawMergers.Size())
                     {
                         SortObject* oj = _drawMergers[runEnd];
                         if (oj->object->GetShape() != shape || oj->drawLOD != oi->drawLOD ||
                             oj->passNum != oi->passNum || !oj->object->Static() ||
-                            (sShape->Special() | oj->object->GetObjSpecial()) != headSpecial || oj->distance2 < d2lo ||
-                            oj->distance2 > d2hi)
+                            oj->object->DeformsSharedShape(oj->drawLOD) ||
+                            (sShape->Special() | oj->object->GetObjSpecial()) != headSpecial || litByLocalLight(oj))
                         {
                             break;
                         }
@@ -1677,7 +1707,7 @@ void Scene::DrawObjectsAndShadowsPass1()
 
             const int runLen = runEnd - i;
             GSectionFilter = SectionClassFilter::OpaqueAndCutout;
-            if (headBatchable && runLen >= 4)
+            if (headBatchable && runLen >= kMinInstanceRun)
             {
                 GEngine->BeginInstancedRunUpload();
                 DrawSortObject(oi);
