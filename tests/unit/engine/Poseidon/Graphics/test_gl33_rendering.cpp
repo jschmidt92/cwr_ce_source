@@ -568,12 +568,13 @@ TEST_CASE("PSConstants: default fogColor alpha is 1", "[Graphics][GL33]")
 
 // Shader/TexGen Enum Value Tests
 
-TEST_CASE("VertexShaderID: VSScreen=0, VSTransform=1, VSShadow=2", "[Graphics][GL33]")
+TEST_CASE("VertexShaderID: VSScreen=0, VSTransform=1, VSShadow=2, VSTerrain=3", "[Graphics][GL33]")
 {
     REQUIRE(VSScreen == 0);
     REQUIRE(VSTransform == 1);
     REQUIRE(VSShadow == 2);
-    REQUIRE(NVertexShaders == 3);
+    REQUIRE(VSTerrain == 3);
+    REQUIRE(NVertexShaders == 4);
     REQUIRE(VSNone == NVertexShaders);
 }
 
@@ -612,7 +613,6 @@ TEST_CASE("VSConst: register indices are non-overlapping", "[Graphics][GL33]")
 #include <glad/gl.h>
 
 extern int MipmapSizeGL33(PacFormat format, int w, int h);
-extern void InitGLPixelFormat(TextureDescGL33& desc, PacFormat format, bool enableDXT);
 
 TEST_CASE("TextureDescGL33: struct has expected fields", "[Graphics][GL33][Texture]")
 {
