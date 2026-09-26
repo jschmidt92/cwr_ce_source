@@ -64,16 +64,17 @@ enum PixelShaderMode
 
 enum PixelShaderID
 {
-    PSNormal,
-    PSDetail,
-    PSGrass,
-    PSWater,
-    PSFlat,
-    PSShadow, // unlit cutout: constant black + alpha
-    PSTerrain,
-    NPixelShaders,
+    PSNormal = 0,
+    PSDetail = 1,
+    PSGrass = 2,
+    PSWater = 3,
+    PSFlat = 4,
+    PSShadow = 5, // unlit cutout: constant black + alpha
+    PSTerrain = 6,
+    NPixelShaders, // 7
     PSNone = NPixelShaders
 };
+static_assert(NPixelShaders == 7, "pixel shader set changed");
 
 struct alignas(16) PSConstants
 {
@@ -101,13 +102,15 @@ struct alignas(16) PSConstants
 
 enum VertexShaderID
 {
-    VSScreen,
-    VSTransform,
-    VSShadow, // unlit transform, shadow path
-    VSTerrain,
-    NVertexShaders,
+    VSScreen = 0,
+    VSTransform = 1,
+    VSShadow = 2, // unlit transform, shadow path
+    VSTerrain = 3,
+    VSWaterInst = 4,
+    NVertexShaders, // 5
     VSNone = NVertexShaders
 };
+static_assert(NVertexShaders == 5, "vertex shader set changed");
 
 namespace VSConst
 {
@@ -630,8 +633,10 @@ class EngineGL33 : public Engine
     void NextFrame() override;
     void SetTerrainHeightmap(const float* heights, int width, int height, float invGrid, float invLandGrid) override;
     void PrepareTerrain(const TerrainSetup& setup) override;
-    void DrawTerrain(const LandCell* cells, size_t count, const TLMaterial& mat) override;
-    void BeginTerrain(const LightList& lights) override;
+    void DrawTerrain(const GroundSegment* segments, size_t count, const TLMaterial& mat) override;
+    void DrawWater(const GroundSegment* segments, size_t count, const TLMaterial& mat, Texture* surfaceTex,
+                   float seaLevel) override;
+    void BeginGround(const LightList& lights) override;
     unsigned AddTerrainLightSet(const LightList& lights) override;
     void FreeTerrainInstanced();
     void CreateTerrainBatches(struct TerrainInstancedGL33& t, int nTextures, const TerrainTexture* textures);
