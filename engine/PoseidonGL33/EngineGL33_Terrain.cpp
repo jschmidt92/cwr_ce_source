@@ -1,6 +1,7 @@
 #include <PoseidonGL33/EngineGL33.hpp>
 #include <PoseidonGL33/TextureGL33.hpp>
 #include <PoseidonGL33/GL33BindCache.hpp>
+#include <PoseidonGL33/GL33TerrainSegments.hpp>
 #include <Poseidon/Graphics/Core/GLIndexBuffer.hpp>
 #include <Poseidon/Graphics/Core/GLCullState.hpp>
 #include <Poseidon/Graphics/Core/GLPipelineState.hpp>
@@ -9,23 +10,20 @@
 #include <Poseidon/Graphics/Core/TLVertex.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <vector>
+#include <span>
 
 using namespace Poseidon;
 
 namespace
 {
 
-struct GpuCellInstance
-{
-    int cellX, cellZ, layer, simple;
-    float originRelX, originRelZ;
-    unsigned lightSet;
-};
-
-// Because we don't have access to bindless texturing, we have to batch terrain cell draws by their texture class.
-// One texture array per texture class (mip0 size, upload format, mip count), and one instanced draw per batch.
+// Because we don't have access to bindless texturing, we have to use array textures instead.
+// Since array textures are limited to one format & mip0 size, we have to create multiple array textures for different formats and sizes.
+// Each terrain segment containing terrain cells from N arrays is drawn in N passes, one for each array.
+// Vertices containing textures from other batches are discarded by the shader.
 struct TerrainBatch
 {
     GLuint array = 0;
@@ -33,17 +31,18 @@ struct TerrainBatch
     int width = 0, height = 0;
     PacFormat format = PacFormatN;
     std::vector<int> textureIndices;
-
-    std::vector<GpuCellInstance> frameInstances;
+    // Segments assigned to this batch for the current frame.
+    std::vector<Engine::GroundSegment> frameSegments;
 
     // A GL_TEXTURE_2D_ARRAY holds at most GL_MAX_ARRAY_TEXTURE_LAYERS layers.
+    // If the map has enough textures to exceed that, we split the textures of that type into multiple batches.
     bool IsFull(int maxLayers) const {
         return static_cast<int>(textureIndices.size()) >= maxLayers;
     }
 
     void ResetFrameState()
     {
-        frameInstances.clear();
+        frameSegments.clear();
     }
 
     void Free()
@@ -70,9 +69,13 @@ struct TerrainInstancedGL33
     GLuint vao = 0, gridVBO = 0, ibo = 0, instVBO = 0;
     int indexCount = 0;
     int subdivCount = 0;
+    int segmentSize = 0;
 
     GLuint cachedProg = 0;
-    GLint locTerrainParams = -1, locTerrainParams2 = -1;
+    GLint locTerrainParams = -1, locTerrainParams2 = -1, locDrawBatch = -1;
+
+    GLuint cachedWaterProg = 0;
+    GLint locWaterParams = -1;
 
     std::vector<TerrainBatch> batches;
     std::vector<TexSlot> texSlots;
@@ -82,6 +85,19 @@ struct TerrainInstancedGL33
 
     float landGrid = 0.0f;
 
+    // Handle to a texture buffer containing bit-packed per-cell info:
+    // batch, layer, simple, valid
+    GLuint cellInfoTex = 0;
+
+    int segRange = 0;
+    // Per-segment texture-batch bitmask.
+    // Segments containing textures from multiple batches are drawn once per batch.
+    // Each bit corresponds to a batch index in batches.
+    std::vector<uint64_t> segBatchMask;
+    // Per-segment water presence booleans.
+    // Only segments containing water get a water mesh instance.
+    std::vector<uint8_t> segHasWater;
+
     // Per-frame light set data.
     // Each entry consists of a count (u32), followed by that many light indices (u32).
     // The indices point to the global light list UBO uploaded by EngineGL33::UploadLocalLights.
@@ -90,12 +106,16 @@ struct TerrainInstancedGL33
     GLuint lightSetTBO = 0;
     GLuint lightSetTex = 0;
 
+    // Temporary segment work buffer, reused to avoid allocations
+    std::vector<Engine::GroundSegment> workSegments;
+
     void ResetFrameState()
     {
-        for (TerrainBatch& b : batches)
+        for (auto& b : batches)
         {
             b.ResetFrameState();
         }
+
         lightSetData.assign(1, 0u);
     }
 };
@@ -103,38 +123,48 @@ struct TerrainInstancedGL33
 namespace
 {
 // Creates a subdivided grid mesh for instanced terrain rendering, and creates the OpenGL resources for it.
-// All cells are rendered using the same grid mesh, which enables instancing.
-void BuildGridMesh(TerrainInstancedGL33& t, int subdiv)
+// The mesh is for a single terrain segment (8x8 tiles), and it used for both land and water.
+void BuildSegmentMesh(TerrainInstancedGL33& t, int subdiv, int segSize)
 {
-    const int n = subdiv;
-    const int verts = (n + 1) * (n + 1);
+    const int cv = (subdiv + 1) * (subdiv + 1);
 
     std::vector<float> pos;
-    pos.reserve(verts * 2);
-    for (int j = 0; j <= n; j++)
-    {
-
-        for (int i = 0; i <= n; i++)
-        {
-            pos.push_back(static_cast<float>(i));
-            pos.push_back(static_cast<float>(j));
-        }
-    }
-
+    pos.reserve(static_cast<size_t>(segSize) * segSize * cv * 4);
     std::vector<unsigned short> idx;
-    idx.reserve(n * n * 6);
-    auto at = [n](int i, int j) -> unsigned short { return static_cast<unsigned short>(j * (n + 1) + i); };
-    for (int j = 0; j < n; j++)
+    idx.reserve(static_cast<size_t>(segSize) * segSize * subdiv * subdiv * 6);
+
+    unsigned short base = 0;
+    for (int cz = 0; cz < segSize; cz++)
     {
-        for (int i = 0; i < n; i++)
+        for (int cx = 0; cx < segSize; cx++)
         {
-            unsigned short v00 = at(i, j), v10 = at(i + 1, j), v01 = at(i, j + 1), v11 = at(i + 1, j + 1);
-            idx.push_back(v10);
-            idx.push_back(v00);
-            idx.push_back(v01);
-            idx.push_back(v10);
-            idx.push_back(v01);
-            idx.push_back(v11);
+            for (int gj = 0; gj <= subdiv; gj++)
+            {
+                for (int gi = 0; gi <= subdiv; gi++)
+                {
+                    pos.push_back(static_cast<float>(cx));
+                    pos.push_back(static_cast<float>(cz));
+                    pos.push_back(static_cast<float>(gi));
+                    pos.push_back(static_cast<float>(gj));
+                }
+            }
+            auto at = [subdiv, base](int i, int j) -> unsigned short {
+                return static_cast<unsigned short>(base + j * (subdiv + 1) + i);
+            };
+            for (int gj = 0; gj < subdiv; gj++)
+            {
+                for (int gi = 0; gi < subdiv; gi++)
+                {
+                    unsigned short v00 = at(gi, gj), v10 = at(gi + 1, gj), v01 = at(gi, gj + 1), v11 = at(gi + 1, gj + 1);
+                    idx.push_back(v10);
+                    idx.push_back(v00);
+                    idx.push_back(v01);
+                    idx.push_back(v10);
+                    idx.push_back(v01);
+                    idx.push_back(v11);
+                }
+            }
+            base += static_cast<unsigned short>(cv);
         }
     }
     t.indexCount = static_cast<int>(idx.size());
@@ -145,8 +175,6 @@ void BuildGridMesh(TerrainInstancedGL33& t, int subdiv)
     }
     GL33Bind::Vao(t.vao);
 
-    // Two vertex buffers: one for the grid mesh, and one for the per-instance data.
-
     if (!t.gridVBO)
     {
         glGenBuffers(1, &t.gridVBO);
@@ -154,8 +182,8 @@ void BuildGridMesh(TerrainInstancedGL33& t, int subdiv)
     glBindBuffer(GL_ARRAY_BUFFER, t.gridVBO);
     glBufferData(GL_ARRAY_BUFFER, pos.size() * sizeof(float), pos.data(), GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
-    // 0: cell-local 2D vertex position
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
+    // 0: (cellX, cellZ within segment, gridI, gridJ within cell)
+    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(float), nullptr);
     glVertexAttribDivisor(0, 0);
 
     if (!t.instVBO)
@@ -163,19 +191,15 @@ void BuildGridMesh(TerrainInstancedGL33& t, int subdiv)
         glGenBuffers(1, &t.instVBO);
     }
     glBindBuffer(GL_ARRAY_BUFFER, t.instVBO);
-    const GLsizei stride = sizeof(GpuCellInstance);
+    const GLsizei stride = sizeof(Engine::GroundSegment);
     glEnableVertexAttribArray(1);
-    // 1: GpuCellInstance integer fields (cellX, cellZ, layer, simple)
-    glVertexAttribIPointer(1, 4, GL_INT, stride, reinterpret_cast<void*>(0));
+    // 1: GroundSegment cell corner
+    glVertexAttribIPointer(1, 2, GL_INT, stride, reinterpret_cast<void*>(0));
     glVertexAttribDivisor(1, 1);
     glEnableVertexAttribArray(2);
-    // 2: GpuCellInstance float fields (originRelX, originRelZ)
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(GpuCellInstance, originRelX)));
+    // 2: GroundSegment lightSet handle
+    glVertexAttribIPointer(2, 1, GL_UNSIGNED_INT, stride, reinterpret_cast<void*>(offsetof(Engine::GroundSegment, lightSet)));
     glVertexAttribDivisor(2, 1);
-    glEnableVertexAttribArray(3);
-    // 3: GpuCellInstance lightSet index (unsigned int)
-    glVertexAttribIPointer(3, 1, GL_UNSIGNED_INT, stride, reinterpret_cast<void*>(offsetof(GpuCellInstance, lightSet)));
-    glVertexAttribDivisor(3, 1);
 
     if (!t.ibo)
     {
@@ -186,6 +210,107 @@ void BuildGridMesh(TerrainInstancedGL33& t, int subdiv)
 
     GL33Bind::Vao(0);
     t.subdivCount = subdiv;
+    t.segmentSize = segSize;
+}
+
+// Generates the per-cell info buffer for the terrain, which is exposed to the shader as a texture.
+// Run once on terrain load, and again when terrain setup changes.
+void BuildCellInfo(TerrainInstancedGL33& t, const Engine::TerrainSetup& setup)
+{
+    const int range = setup.cellRange;
+    if (!setup.cellTexIndex || range <= 0)
+    {
+        return;
+    }
+
+    std::vector<unsigned short> data(static_cast<size_t>(range) * range * 2, 0);
+    for (int i = 0; i < range * range; i++)
+    {
+        const int ti = setup.cellTexIndex[i];
+        unsigned short layer = 0, flags = 0;
+        if (ti >= 0 && ti < static_cast<int>(t.texSlots.size()) && t.texSlots[ti].batch >= 0)
+        {
+            const TexSlot& s = t.texSlots[ti];
+            layer = static_cast<unsigned short>(s.layer);
+            flags = static_cast<unsigned short>((s.batch << 2) | (s.simple ? 2 : 0) | 1);
+        }
+        data[i * 2 + 0] = layer;
+        data[i * 2 + 1] = flags;
+    }
+
+    if (!t.cellInfoTex)
+    {
+        glGenTextures(1, &t.cellInfoTex);
+    }
+    GL33Bind::ActiveUnit(0);
+    glBindTexture(GL_TEXTURE_2D, t.cellInfoTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16UI, range, range, 0, GL_RG_INTEGER, GL_UNSIGNED_SHORT, data.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+// Generates the per-segment texture batch bitmasks and water presence flags.
+void BuildSegmentMasks(TerrainInstancedGL33& t, const Engine::TerrainSetup& setup)
+{
+    const int range = setup.cellRange;
+    const int seg = t.segmentSize;
+    t.segBatchMask.clear();
+    t.segHasWater.clear();
+    t.segRange = 0;
+    if (!setup.cellTexIndex || range <= 0 || seg <= 0)
+    {
+        return;
+    }
+    const int sr = (range + seg - 1) / seg;
+    t.segRange = sr;
+    t.segBatchMask.assign(static_cast<size_t>(sr) * sr, 0);
+    t.segHasWater.assign(static_cast<size_t>(sr) * sr, 0);
+    for (int lz = 0; lz < range; lz++)
+    {
+        for (int lx = 0; lx < range; lx++)
+        {
+            const int idx = lz * range + lx;
+            const int si = (lz / seg) * sr + (lx / seg);
+            if (setup.cellWater && setup.cellWater[idx])
+            {
+                t.segHasWater[si] = 1;
+            }
+            const int ti = setup.cellTexIndex[idx];
+            if (ti >= 0 && ti < static_cast<int>(t.texSlots.size()) && t.texSlots[ti].batch >= 0)
+            {
+                t.segBatchMask[si] |= (1ull << t.texSlots[ti].batch);
+            }
+        }
+    }
+}
+
+// Groups the frame's visible segments into batches.
+// A segment containing textures from multiple batches is added to each corresponding batch's list.
+void GroupSegmentsByBatch(TerrainInstancedGL33& t, const Engine::GroundSegment* segments, size_t count)
+{
+    const int nBatches = static_cast<int>(t.batches.size());
+    const int seg = t.segmentSize, sr = t.segRange;
+    for (size_t i = 0; i < count; i++)
+    {
+        // Compute this segment's index within the segBatchMask array, and look up its batch bitmask
+        const auto segmentIndex = render::gl33::TerrainSegmentIndex(segments[i].cellX, segments[i].cellZ, seg, sr);
+        if (!segmentIndex || *segmentIndex >= t.segBatchMask.size())
+        {
+            continue;
+        }
+        const uint64_t mask = t.segBatchMask[*segmentIndex];
+        // Iterate over the batches and add this segment to all matching batches
+        for (int b = 0; b < nBatches; b++)
+        {
+            if (mask & (1ull << b))
+            {
+                t.batches[b].frameSegments.push_back(segments[i]);
+            }
+        }
+    }
 }
 } // namespace
 
@@ -242,6 +367,12 @@ void EngineGL33::CreateTerrainBatches(struct TerrainInstancedGL33& t, int nTextu
         }
         if (b < 0)
         {
+            // The cell-info batch index is a 6-bit field (see BuildCellInfo), so at most 64 batches fit.
+            if (static_cast<int>(t.batches.size()) >= 64)
+            {
+                LOG_ERROR(Graphics, "GL33 terrain: more than 64 texture classes; some surfaces will not render");
+                continue;
+            }
             TerrainBatch newBatch;
             newBatch.width = w;
             newBatch.height = h;
@@ -350,12 +481,14 @@ void EngineGL33::PrepareTerrain(const TerrainSetup& setup)
 
     t.landGrid = setup.landGrid;
 
-    if (t.subdivCount != setup.subdivCount || !t.vao)
+    if (t.subdivCount != setup.subdivCount || t.segmentSize != setup.segmentSize || !t.vao)
     {
-        BuildGridMesh(t, setup.subdivCount);
+        BuildSegmentMesh(t, setup.subdivCount, setup.segmentSize);
     }
 
     CreateTerrainBatches(t, setup.nTextures, setup.textures);
+    BuildCellInfo(t, setup);
+    BuildSegmentMasks(t, setup);
 
     // Jitter map: two floats per land-grid point, sampled by vsTerrain
     if (setup.jitter && setup.jitterW > 0 && setup.jitterH > 0)
@@ -411,6 +544,10 @@ void EngineGL33::FreeTerrainInstanced()
     {
         glDeleteTextures(1, &t.jitterTex);
     }
+    if (t.cellInfoTex)
+    {
+        glDeleteTextures(1, &t.cellInfoTex);
+    }
     if (t.lightSetTBO)
     {
         glDeleteBuffers(1, &t.lightSetTBO);
@@ -423,7 +560,7 @@ void EngineGL33::FreeTerrainInstanced()
     _terrainInst = nullptr;
 }
 
-void EngineGL33::BeginTerrain(const LightList& lights)
+void EngineGL33::BeginGround(const LightList& lights)
 {
     if (!_terrainInst)
     {
@@ -464,7 +601,7 @@ unsigned EngineGL33::AddTerrainLightSet(const LightList& lights)
     return handle;
 }
 
-void EngineGL33::DrawTerrain(const LandCell* cells, size_t count, const TLMaterial& mat)
+void EngineGL33::DrawTerrain(const GroundSegment* segments, size_t count, const TLMaterial& mat)
 {
     if (!_terrainInst || count <= 0)
     {
@@ -502,6 +639,7 @@ void EngineGL33::DrawTerrain(const LandCell* cells, size_t count, const TLMateri
         t.cachedProg = prog;
         t.locTerrainParams = glGetUniformLocation(prog, "terrainParams");
         t.locTerrainParams2 = glGetUniformLocation(prog, "terrainParams2");
+        t.locDrawBatch = glGetUniformLocation(prog, "drawBatch");
     }
 
     const float subdiv = static_cast<float>(t.subdivCount);
@@ -531,6 +669,12 @@ void EngineGL33::DrawTerrain(const LandCell* cells, size_t count, const TLMateri
         GL33Bind::Tex2DForSampling(4, t.jitterTex);
     }
 
+    // Bind cell info texture on unit 7
+    if (t.cellInfoTex)
+    {
+        GL33Bind::Tex2DForSampling(7, t.cellInfoTex);
+    }
+
     // Upload the per-frame light set to a texture buffer and bind it on unit 6
     if (t.lightSetData.empty())
     {
@@ -545,63 +689,177 @@ void EngineGL33::DrawTerrain(const LandCell* cells, size_t count, const TLMateri
         glGenTextures(1, &t.lightSetTex);
     }
     glBindBuffer(GL_TEXTURE_BUFFER, t.lightSetTBO);
-    glBufferData(GL_TEXTURE_BUFFER, static_cast<GLsizeiptr>(t.lightSetData.size() * sizeof(unsigned)),
-                 t.lightSetData.data(), GL_STREAM_DRAW);
+    glBufferData(
+        GL_TEXTURE_BUFFER,
+        static_cast<GLsizeiptr>(t.lightSetData.size() * sizeof(unsigned)),
+        t.lightSetData.data(),
+        GL_STREAM_DRAW
+    );
     GL33Bind::ActiveUnit(6);
     glBindTexture(GL_TEXTURE_BUFFER, t.lightSetTex);
     glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, t.lightSetTBO);
 
-    // Assign each cell to a batch
-    const float camX = _frameState.cameraPos[0];
-    const float camZ = _frameState.cameraPos[2];
-
-    for (size_t i = 0; i < count; i++)
-    {
-        const LandCell& c = cells[i];
-        if (c.texIndex < 0 || c.texIndex >= static_cast<int>(t.texSlots.size()))
-        {
-            continue;
-        }
-
-        const TexSlot slot = t.texSlots[c.texIndex];
-        if (slot.batch < 0)
-        {
-            continue;
-        }
-
-        GpuCellInstance g;
-        g.cellX = c.cellX;
-        g.cellZ = c.cellZ;
-        g.layer = slot.layer;
-        g.simple = slot.simple;
-        g.originRelX = static_cast<float>(c.cellX) * t.landGrid - camX;
-        g.originRelZ = static_cast<float>(c.cellZ) * t.landGrid - camZ;
-        g.lightSet = c.lightSet;
-        t.batches[slot.batch].frameInstances.push_back(g);
-    }
-
-    // Draw all batches
     GL33Bind::Vao(t.vao);
-    for (TerrainBatch& b : t.batches)
-    {
-        if (b.frameInstances.empty())
-        {
-            continue;
-        }
+    glBindBuffer(GL_ARRAY_BUFFER, t.instVBO);
+
+    const int nBatches = static_cast<int>(t.batches.size());
+    const GLsizei istride = sizeof(GroundSegment);
+    auto bindBatchArray = [&](int b) {
         GL33Bind::ActiveUnit(5);
-        glBindTexture(GL_TEXTURE_2D_ARRAY, b.array);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, t.batches[b].array);
         GL33Bind::ActiveUnit(0);
-        glBindTexture(GL_TEXTURE_2D_ARRAY, b.array);
-        glBindBuffer(GL_ARRAY_BUFFER, t.instVBO);
-        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(b.frameInstances.size() * sizeof(GpuCellInstance)), b.frameInstances.data(),
-                     GL_STREAM_DRAW);
-        glDrawElementsInstanced(GL_TRIANGLES, t.indexCount, GL_UNSIGNED_SHORT, nullptr,
-                                static_cast<GLsizei>(b.frameInstances.size()));
+        glBindTexture(GL_TEXTURE_2D_ARRAY, t.batches[b].array);
+        if (t.locDrawBatch >= 0)
+        {
+            glUniform1i(t.locDrawBatch, b);
+        }
+    };
+
+    if (nBatches == 1)
+    {
+        // All segments are in the same batch, so we can draw them all at once
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(count * istride), segments, GL_STREAM_DRAW);
+        bindBatchArray(0);
+        glDrawElementsInstanced(GL_TRIANGLES, t.indexCount, GL_UNSIGNED_SHORT, nullptr, static_cast<GLsizei>(count));
         Poseidon::gPerfDrawCalls++;
+    }
+    else
+    {
+        // There are multiple batches, so group visible segments by batch and draw each batch separately
+        GroupSegmentsByBatch(t, segments, count);
+        for (int b = 0; b < nBatches; b++)
+        {
+            const std::vector<GroundSegment>& fs = t.batches[b].frameSegments;
+            if (fs.empty())
+            {
+                continue;
+            }
+            glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(fs.size() * istride), fs.data(), GL_STREAM_DRAW);
+            bindBatchArray(b);
+            glDrawElementsInstanced(GL_TRIANGLES, t.indexCount, GL_UNSIGNED_SHORT, nullptr, static_cast<GLsizei>(fs.size()));
+            Poseidon::gPerfDrawCalls++;
+        }
     }
 
     // Clean up GL state
     glBindSampler(5, 0);
+    InvalidatePipelineCache();
+    _vertexShaderSel = VSNone;
+    _pixelShaderSel = PSNone;
+}
+
+void EngineGL33::DrawWater(const GroundSegment* segments, size_t count, const TLMaterial& mat, Texture* surfaceTex, float seaLevel)
+{
+    if (!_terrainInst || count <= 0)
+    {
+        return;
+    }
+
+    TerrainInstancedGL33& t = *_terrainInst;
+    if (!t.vao || t.indexCount <= 0 || t.segHasWater.empty())
+    {
+        return;
+    }
+
+    // Filter out visible segments that don't contain water
+    std::vector<GroundSegment>& wet = t.workSegments;
+    wet.clear();
+    const int seg = t.segmentSize, sr = t.segRange;
+    for (size_t i = 0; i < count; i++)
+    {
+        const auto segmentIndex = render::gl33::TerrainSegmentIndex(segments[i].cellX, segments[i].cellZ, seg, sr);
+        if (!segmentIndex || t.segHasWater[*segmentIndex])
+        {
+            wet.push_back(segments[i]);
+        }
+    }
+    if (wet.empty())
+    {
+        return;
+    }
+    segments = wet.data();
+    count = wet.size();
+
+    TextureGL33* surf = static_cast<TextureGL33*>(surfaceTex);
+    if (!surf)
+    {
+        return;
+    }
+
+    GLuint prog = _shaderProgram[VSWaterInst][PSSNormal][_pixelShaderModeSel][PSDetail];
+    if (!prog)
+    {
+        return;
+    }
+
+    BeginPass(PassId::Terrain);
+    ApplyBlendMode(BlendMode::Opaque);
+    ApplyDepthMode(DepthMode::Normal);
+    render::pipeline::SetPolygonOffsetForDecals(false);
+    glBindSampler(0, _samplerObjects[SamplerRepeat]);
+    SetAlphaTest(false);
+    const float white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    memcpy(_psConstants.constColor, white, sizeof(white));
+    UploadPSConstant(PSConstants::SlotConstColor, _psConstants.constColor);
+    SetShaderFogEnabled(true);
+    UploadVSMaterialConstants(mat, _sunEnabled);
+
+    glUseProgram(prog);
+    if (t.cachedWaterProg != prog)
+    {
+        t.cachedWaterProg = prog;
+        t.locWaterParams = glGetUniformLocation(prog, "waterParams");
+    }
+    const float invSubdiv = 1.0f / static_cast<float>(t.subdivCount);
+    if (t.locWaterParams >= 0)
+    {
+        glUniform4f(t.locWaterParams, seaLevel, invSubdiv, 32.0f, t.landGrid);
+    }
+
+    // Water surface texture on unit 0, specular texture on unit 1
+    if (TextBankGL33* bank = TextBankDD())
+    {
+        bank->UseMipmap(surf, 0, 0);
+        GL33Bind::Tex2DForSampling(0, surf->GetHandle());
+        if (TextureGL33* spec = bank->GetSpecularTexture())
+        {
+            bank->UseMipmap(spec, 0, 0);
+            GL33Bind::Tex2DForSampling(1, spec->GetHandle());
+        }
+    }
+
+    // Upload the per-frame light set to a texture buffer and bind it on unit 6
+    if (t.lightSetData.empty())
+    {
+        t.lightSetData.push_back(0u);
+    }
+    if (!t.lightSetTBO)
+    {
+        glGenBuffers(1, &t.lightSetTBO);
+    }
+    if (!t.lightSetTex)
+    {
+        glGenTextures(1, &t.lightSetTex);
+    }
+    glBindBuffer(GL_TEXTURE_BUFFER, t.lightSetTBO);
+    glBufferData(
+        GL_TEXTURE_BUFFER,
+        static_cast<GLsizeiptr>(t.lightSetData.size() * sizeof(unsigned)),
+        t.lightSetData.data(),
+        GL_STREAM_DRAW
+    );
+    GL33Bind::ActiveUnit(6);
+    glBindTexture(GL_TEXTURE_BUFFER, t.lightSetTex);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, t.lightSetTBO);
+
+    GL33Bind::Vao(t.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, t.instVBO);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(count * sizeof(GroundSegment)), segments, GL_STREAM_DRAW);
+    glDrawElementsInstanced(GL_TRIANGLES, t.indexCount, GL_UNSIGNED_SHORT, nullptr, static_cast<GLsizei>(count));
+    Poseidon::gPerfDrawCalls++;
+
+    // Clean up GL state
+    glBindSampler(0, 0);
     InvalidatePipelineCache();
     _vertexShaderSel = VSNone;
     _pixelShaderSel = PSNone;
